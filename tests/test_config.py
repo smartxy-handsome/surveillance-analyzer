@@ -27,3 +27,16 @@ def test_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("SURVEILLANCE_SAMPLING__FPS", "10.0")
     config = load_config(tmp_path / "nonexistent.yaml")
     assert config.sampling.fps == 10.0
+
+
+def test_pipeline_max_concurrent_jobs_default():
+    config = load_config(Path("config/default.yaml"))
+    assert config.pipeline.max_concurrent_jobs == 1
+
+
+def test_pipeline_max_concurrent_jobs_from_yaml(tmp_path):
+    cfg = {"pipeline": {"max_concurrent_jobs": 3}}
+    p = tmp_path / "custom.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    assert config.pipeline.max_concurrent_jobs == 3

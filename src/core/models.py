@@ -42,6 +42,7 @@ class PipelineConfig:
     frame_queue_size: int = 64
     num_decode_threads: int = 2
     num_inference_threads: int = 1
+    max_concurrent_jobs: int = 1
 
 
 @dataclass
