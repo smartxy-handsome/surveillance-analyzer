@@ -28,3 +28,6 @@ data/videos/
 
 # Windows shortcuts
 *.lnk
+
+# Brainstorming visual companion (local mockups)
+.superpowers/
