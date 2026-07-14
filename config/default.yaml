@@ -1,0 +1,32 @@
+video:
+  supported_formats: [".mp4", ".avi", ".mkv", ".mov"]
+  max_file_size_mb: 2048
+
+sampling:
+  fps: 3.0
+  strategy: "uniform"
+
+detection:
+  model_name: "yolov8n.pt"
+  confidence_threshold: 0.5
+  device: "cuda:0"
+  target_classes: [0]
+  batch_size: 8
+
+aggregation:
+  merge_gap_seconds: 2.0
+  min_segment_seconds: 1.0
+
+pipeline:
+  frame_queue_size: 64
+  num_decode_threads: 2
+  num_inference_threads: 1
+
+storage:
+  database_url: "sqlite+aiosqlite:///./data/results.db"
+  video_storage_dir: "./data/videos"
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["http://localhost:5173"]

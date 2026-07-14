@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Test / cache
+.pytest_cache/
+.cache/
+
+# Node
+node_modules/
+
+# Model weights & data (download separately, not tracked)
+*.pt
+*.onnx
+data/results.db
+data/videos/
+
+# Local env / secrets
+.env
+.env.local
+
+# Windows shortcuts
+*.lnk
