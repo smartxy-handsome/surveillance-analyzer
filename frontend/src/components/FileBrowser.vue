@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { browse } from '../api/client'
 import type { BrowseItem } from '../api/client'
 import QuickPathBar from './QuickPathBar.vue'
 
-const emit = defineEmits<{ select: [path: string] }>()
+const emit = defineEmits<{ select: [paths: string[]] }>()
 
 const currentPath = ref('')
 const parentPath = ref<string | null>(null)
@@ -12,6 +12,9 @@ const items = ref<BrowseItem[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const visible = ref(false)
+const selected = ref<Set<string>>(new Set())
+
+const selectedPaths = computed(() => Array.from(selected.value))
 
 async function navigate(path: string) {
   loading.value = true
@@ -30,6 +33,7 @@ async function navigate(path: string) {
 
 function open() {
   visible.value = true
+  selected.value = new Set()
   navigate(currentPath.value)
 }
 
@@ -44,10 +48,26 @@ function goUp() {
 function handleClick(item: BrowseItem) {
   if (item.is_dir) {
     navigate(item.path)
-  } else {
-    emit('select', item.path)
-    visible.value = false
+    return
   }
+  // Toggle file selection
+  if (selected.value.has(item.path)) {
+    selected.value.delete(item.path)
+  } else {
+    selected.value.add(item.path)
+  }
+  // Trigger reactivity for the Set
+  selected.value = new Set(selected.value)
+}
+
+function isSelected(item: BrowseItem) {
+  return selected.value.has(item.path)
+}
+
+function confirmSelection() {
+  emit('select', selectedPaths.value)
+  visible.value = false
+  selected.value = new Set()
 }
 
 function onQuickPath(path: string) {
@@ -89,17 +109,26 @@ defineExpose({ open })
               v-for="item in items"
               :key="item.path"
               class="file-item"
-              :class="{ dir: item.is_dir }"
+              :class="{ dir: item.is_dir, selected: !item.is_dir && isSelected(item) }"
               @click="handleClick(item)"
             >
               <span class="icon">{{ item.is_dir ? '📁' : '🎬' }}</span>
               <span class="name">{{ item.name }}</span>
               <span v-if="!item.is_dir && item.size_mb" class="size">{{ item.size_mb }} MB</span>
+              <span v-if="!item.is_dir && isSelected(item)" class="check">✓</span>
             </div>
             <p v-if="items.length === 0 && !loading" class="empty">
               <span class="empty-icon">📭</span>
               未找到视频文件
             </p>
+          </div>
+          <div class="confirm-bar">
+            <span class="selected-count">
+              已选 {{ selectedPaths.length }} 个
+            </span>
+            <button class="confirm-btn" @click="confirmSelection">
+              确认选择
+            </button>
           </div>
         </div>
       </div>
@@ -331,5 +360,43 @@ defineExpose({ open })
     width: 95%;
     max-height: 85vh;
   }
+}
+
+.file-item.selected {
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.file-item.selected .name {
+  color: var(--accent-blue);
+}
+
+.check {
+  color: var(--accent-blue);
+  margin-left: auto;
+}
+
+.confirm-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+}
+
+.selected-count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.confirm-btn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--gradient-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
 }
 </style>
