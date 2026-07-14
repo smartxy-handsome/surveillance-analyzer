@@ -1,46 +1,90 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { createJob } from '../api/client'
 import FileBrowser from './FileBrowser.vue'
+import PendingList from './PendingList.vue'
 import RecentHistory from './RecentHistory.vue'
 import { useRecentHistory } from '../composables/useRecentHistory'
+import { submitItems, extractError, basename, type PendingItem } from '../utils/submitItems'
 
-const emit = defineEmits<{ 'job-created': [id: string] }>()
-const filePath = ref('')
+const emit = defineEmits<{
+  'job-created': []
+  'open-history': [id: string]
+}>()
+
+const draftPath = ref('')
 const submitting = ref(false)
 const error = ref<string | null>(null)
 const browser = ref<InstanceType<typeof FileBrowser> | null>(null)
+const items = ref<PendingItem[]>([])
 const { addEntry } = useRecentHistory()
 
-function onFileSelected(path: string) {
-  filePath.value = path
+const canSubmit = computed(() => items.value.length > 0 && !submitting.value)
+
+function addPath(path: string) {
+  const trimmed = path.trim()
+  if (!trimmed) return
+  const normalized = trimmed.toLowerCase()
+  if (items.value.some((it) => it.path.toLowerCase() === normalized)) return // dedupe (case-insensitive)
+  items.value.push({
+    id: crypto.randomUUID(),
+    path: trimmed,
+    filename: basename(trimmed),
+    status: 'pending',
+  })
+}
+
+function onAddDraft() {
+  addPath(draftPath.value)
+  draftPath.value = ''
+}
+
+function onFilesSelected(paths: string[]) {
+  for (const p of paths) {
+    addPath(p)
+  }
+}
+
+function onRemove(id: string) {
+  items.value = items.value.filter((it) => it.id !== id)
 }
 
 async function onSubmit() {
-  if (!filePath.value.trim()) return
-
+  if (!canSubmit.value) return
   submitting.value = true
   error.value = null
   try {
-    const job = await createJob(filePath.value.trim())
-    addEntry({
-      id: job.id,
-      filename: job.filename,
-      filePath: filePath.value.trim(),
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    })
-    emit('job-created', job.id)
-    filePath.value = ''
-  } catch (err: any) {
-    error.value = err.response?.data?.detail || '创建任务失败'
+    const outcomes = await submitItems(items.value, createJob)
+    const remaining: PendingItem[] = []
+    for (let i = 0; i < items.value.length; i++) {
+      const item = items.value[i]
+      const outcome = outcomes[i]
+      if (outcome.ok) {
+        addEntry({
+          id: outcome.jobId!,
+          filename: item.filename,
+          filePath: item.path,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        })
+        emit('job-created')
+      } else {
+        remaining.push({ ...item, status: 'error', error: outcome.error })
+      }
+    }
+    items.value = remaining
+    if (remaining.some((it) => it.status === 'error')) {
+      error.value = '部分视频提交失败，请查看标红项'
+    }
+  } catch (err) {
+    error.value = extractError(err)
   } finally {
     submitting.value = false
   }
 }
 
 function onHistorySelect(id: string) {
-  emit('job-created', id)
+  emit('open-history', id)
 }
 </script>
 
@@ -50,24 +94,36 @@ function onHistorySelect(id: string) {
       <span class="icon">🔍</span>
       分析视频
     </h2>
-    <form @submit.prevent="onSubmit">
+    <form @submit.prevent="onAddDraft">
       <input
-        v-model="filePath"
+        v-model="draftPath"
         type="text"
-        placeholder="视频文件路径，例如 D:\videos\camera1.mp4"
+        placeholder="视频文件路径，可逐条追加，例如 D:\videos\camera1.mp4"
         :disabled="submitting"
         class="path-input"
       />
-      <button type="button" class="browse-btn" @click="browser?.open()" :disabled="submitting">
-        📁 浏览...
+      <button type="submit" class="add-btn" :disabled="submitting || !draftPath.trim()">
+        ＋ 追加
       </button>
-      <button type="submit" class="submit-btn" :disabled="submitting || !filePath.trim()">
-        {{ submitting ? '⏳ 启动中...' : '▶ 开始分析' }}
+      <button
+        type="button"
+        class="browse-btn"
+        @click="browser?.open()"
+        :disabled="submitting"
+      >
+        📁 浏览...
       </button>
     </form>
     <p v-if="error" class="error">{{ error }}</p>
 
-    <FileBrowser ref="browser" @select="onFileSelected" />
+    <PendingList
+      :items="items"
+      :submitting="submitting"
+      @remove="onRemove"
+      @submit="onSubmit"
+    />
+
+    <FileBrowser ref="browser" @select="onFilesSelected" />
   </div>
 
   <RecentHistory @select="onHistorySelect" />
@@ -126,6 +182,7 @@ form {
   color: var(--text-muted);
 }
 
+.add-btn,
 .browse-btn {
   padding: var(--space-2) var(--space-4);
   background: var(--bg-tertiary);
@@ -138,32 +195,16 @@ form {
   white-space: nowrap;
 }
 
+.add-btn:hover:not(:disabled),
 .browse-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--text-secondary);
 }
 
-.submit-btn {
-  padding: var(--space-2) var(--space-5);
-  background: var(--gradient-blue);
-  border: none;
-  border-radius: var(--radius-md);
-  color: white;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-
-.submit-btn:disabled {
+.add-btn:disabled,
+.browse-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.submit-btn:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-blue);
-  transform: translateY(-1px);
 }
 
 .error {
@@ -177,8 +218,8 @@ form {
     flex-direction: column;
   }
 
-  .browse-btn,
-  .submit-btn {
+  .add-btn,
+  .browse-btn {
     width: 100%;
   }
 }

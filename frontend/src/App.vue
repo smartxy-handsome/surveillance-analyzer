@@ -3,10 +3,18 @@ import { ref } from 'vue'
 import VideoUploader from './components/VideoUploader.vue'
 import JobList from './components/JobList.vue'
 import JobDetail from './components/JobDetail.vue'
+import { useJobsStore } from './stores/jobs'
 
 const currentJobId = ref<string | null>(null)
+const store = useJobsStore()
 
-function onJobCreated(id: string) {
+function onJobCreated() {
+  // New jobs were submitted: refresh the list and stay on the upload page.
+  store.fetchJobs()
+}
+
+function onOpenJob(id: string) {
+  // Open an existing job (e.g. from recent history): navigate to its detail.
   currentJobId.value = id
 }
 
@@ -28,7 +36,7 @@ function onBack() {
     </header>
     <main>
       <template v-if="!currentJobId">
-        <VideoUploader @job-created="onJobCreated" />
+        <VideoUploader @job-created="onJobCreated" @open-history="onOpenJob" />
         <JobList @select="(id: string) => (currentJobId = id)" />
       </template>
       <template v-else>

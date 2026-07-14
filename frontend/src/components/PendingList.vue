@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PendingItem } from '../utils/submitItems'
 
-defineProps<{ items: PendingItem[] }>()
+defineProps<{ items: PendingItem[]; submitting?: boolean }>()
 const emit = defineEmits<{
   remove: [id: string]
   submit: []
@@ -29,8 +29,8 @@ const emit = defineEmits<{
       <button class="remove" title="移除" @click="emit('remove', item.id)">✕</button>
     </div>
 
-    <button class="submit-btn" @click="emit('submit')">
-      ▶ 开始分析 ({{ items.length }})
+    <button class="submit-btn" :disabled="submitting" @click="emit('submit')">
+      {{ submitting ? '⏳ 提交中...' : `▶ 开始分析 (${items.length})` }}
     </button>
   </div>
 </template>
@@ -129,7 +129,12 @@ const emit = defineEmits<{
   transition: all var(--transition-fast);
 }
 
-.submit-btn:hover {
+.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submit-btn:hover:not(:disabled) {
   box-shadow: var(--shadow-glow-blue);
 }
 </style>
