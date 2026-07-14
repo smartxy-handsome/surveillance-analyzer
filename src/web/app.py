@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     app.state.segment_repo = segment_repo
     app.state.capture_repo = capture_repo
     app.state.session_factory = session_factory
+    app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
 
     yield
 

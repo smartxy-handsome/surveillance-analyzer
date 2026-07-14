@@ -196,103 +196,104 @@ def create_jobs_router() -> APIRouter:
 
 
 async def _run_analysis(job_id: str, app):
-    import time as time_mod
+    async with app.state.analysis_semaphore:
+        import time as time_mod
 
-    from src.core.config import load_config
-    from src.detection.yolo_detector import YOLOv8Detector
-    from src.pipeline.capture_saver import CaptureSaver, get_capture_output_dir
-    from src.pipeline.coordinator import PipelineCoordinator
-    from src.storage.repository import CaptureCreate, SegmentCreate
-    from src.video.reader import OpenCVFrameReader
-    from src.video.sampler import compute_frame_indices
+        from src.core.config import load_config
+        from src.detection.yolo_detector import YOLOv8Detector
+        from src.pipeline.capture_saver import CaptureSaver, get_capture_output_dir
+        from src.pipeline.coordinator import PipelineCoordinator
+        from src.storage.repository import CaptureCreate, SegmentCreate
+        from src.video.reader import OpenCVFrameReader
+        from src.video.sampler import compute_frame_indices
 
-    config = app.state.config
-    job_repo = app.state.job_repo
-    segment_repo = app.state.segment_repo
-    capture_repo = app.state.capture_repo
+        config = app.state.config
+        job_repo = app.state.job_repo
+        segment_repo = app.state.segment_repo
+        capture_repo = app.state.capture_repo
 
-    try:
-        await job_repo.update_status(job_id, "processing")
-        job = await job_repo.get(job_id)
+        try:
+            await job_repo.update_status(job_id, "processing")
+            job = await job_repo.get(job_id)
 
-        # Read metadata with a temporary reader
-        meta_reader = OpenCVFrameReader()
-        meta = meta_reader.open(job.file_path)
-        meta_reader.close()
+            # Read metadata with a temporary reader
+            meta_reader = OpenCVFrameReader()
+            meta = meta_reader.open(job.file_path)
+            meta_reader.close()
 
-        await job_repo.update_video_metadata(
-            job_id, meta.duration_seconds, meta.fps, meta.width, meta.height, meta.total_frames
-        )
-
-        frame_indices = compute_frame_indices(meta.fps, config.sampling.fps, meta.total_frames)
-
-        detector = YOLOv8Detector(
-            model_name=config.detection.model_name,
-            device=config.detection.device,
-            target_classes=config.detection.target_classes,
-            confidence_threshold=config.detection.confidence_threshold,
-            batch_size=config.detection.batch_size,
-        )
-
-        coordinator = PipelineCoordinator(
-            reader_factory=OpenCVFrameReader,
-            video_path=job.file_path,
-            detector=detector,
-            sampling_config=config.sampling,
-            detection_config=config.detection,
-            aggregation_config=config.aggregation,
-            pipeline_config=config.pipeline,
-        )
-
-        t0 = time_mod.monotonic()
-        result = coordinator.run(frame_indices, meta.fps)
-        elapsed = time_mod.monotonic() - t0
-
-        segments = result.segments
-        captures = result.captures
-
-        if segments:
-            await segment_repo.bulk_create(
-                job_id,
-                [
-                    SegmentCreate(
-                        start_time=s.start_time,
-                        end_time=s.end_time,
-                        detection_count=s.detection_count,
-                        avg_confidence=s.avg_confidence,
-                        max_confidence=s.max_confidence,
-                    )
-                    for s in segments
-                ],
+            await job_repo.update_video_metadata(
+                job_id, meta.duration_seconds, meta.fps, meta.width, meta.height, meta.total_frames
             )
 
-        # Save capture images
-        if captures:
-            output_dir = get_capture_output_dir(job.file_path)
-            saver = CaptureSaver(output_dir)
-            all_capture_results = []
-            for capture_data in captures:
-                results = saver.save_segment_captures(capture_data)
-                all_capture_results.extend(results)
+            frame_indices = compute_frame_indices(meta.fps, config.sampling.fps, meta.total_frames)
 
-            # Store capture paths in database
-            if all_capture_results:
-                await capture_repo.bulk_create(
+            detector = YOLOv8Detector(
+                model_name=config.detection.model_name,
+                device=config.detection.device,
+                target_classes=config.detection.target_classes,
+                confidence_threshold=config.detection.confidence_threshold,
+                batch_size=config.detection.batch_size,
+            )
+
+            coordinator = PipelineCoordinator(
+                reader_factory=OpenCVFrameReader,
+                video_path=job.file_path,
+                detector=detector,
+                sampling_config=config.sampling,
+                detection_config=config.detection,
+                aggregation_config=config.aggregation,
+                pipeline_config=config.pipeline,
+            )
+
+            t0 = time_mod.monotonic()
+            result = coordinator.run(frame_indices, meta.fps)
+            elapsed = time_mod.monotonic() - t0
+
+            segments = result.segments
+            captures = result.captures
+
+            if segments:
+                await segment_repo.bulk_create(
                     job_id,
                     [
-                        CaptureCreate(
-                            segment_index=r.segment_index,
-                            timestamp=r.timestamp,
-                            confidence=r.confidence,
-                            crop_path=r.crop_path,
-                            annotated_path=r.annotated_path,
+                        SegmentCreate(
+                            start_time=s.start_time,
+                            end_time=s.end_time,
+                            detection_count=s.detection_count,
+                            avg_confidence=s.avg_confidence,
+                            max_confidence=s.max_confidence,
                         )
-                        for r in all_capture_results
+                        for s in segments
                     ],
                 )
 
-        total_person_time = sum(s.duration for s in segments)
-        await job_repo.update_summary(job_id, len(segments), total_person_time, elapsed)
-        await job_repo.update_status(job_id, "completed")
-    except Exception as e:
-        await job_repo.update_status(job_id, "failed", str(e))
+            # Save capture images
+            if captures:
+                output_dir = get_capture_output_dir(job.file_path)
+                saver = CaptureSaver(output_dir)
+                all_capture_results = []
+                for capture_data in captures:
+                    results = saver.save_segment_captures(capture_data)
+                    all_capture_results.extend(results)
+
+                # Store capture paths in database
+                if all_capture_results:
+                    await capture_repo.bulk_create(
+                        job_id,
+                        [
+                            CaptureCreate(
+                                segment_index=r.segment_index,
+                                timestamp=r.timestamp,
+                                confidence=r.confidence,
+                                crop_path=r.crop_path,
+                                annotated_path=r.annotated_path,
+                            )
+                            for r in all_capture_results
+                        ],
+                    )
+
+            total_person_time = sum(s.duration for s in segments)
+            await job_repo.update_summary(job_id, len(segments), total_person_time, elapsed)
+            await job_repo.update_status(job_id, "completed")
+        except Exception as e:
+            await job_repo.update_status(job_id, "failed", str(e))

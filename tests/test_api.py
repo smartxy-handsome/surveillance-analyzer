@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,6 +32,7 @@ async def client():
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
     app.state.session_factory = session_factory
+    app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
