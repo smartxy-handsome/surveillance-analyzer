@@ -49,8 +49,10 @@ class SegmentCaptureCollector:
             self._segment_times[segment_key] = (timestamp, timestamp)
             return
 
-        start, _ = self._segment_times[segment_key]
-        self._segment_times[segment_key] = (start, timestamp)
+        start, end = self._segment_times[segment_key]
+        # Frames may arrive out of order (parallel decode threads), so track
+        # the segment span by timestamp, not arrival order.
+        self._segment_times[segment_key] = (min(start, timestamp), max(end, timestamp))
         # Frames may arrive slightly out of order (parallel decode threads +
         # batched inference), so track appearance/departure by timestamp.
         pair = self._segments[segment_key]

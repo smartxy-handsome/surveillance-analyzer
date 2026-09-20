@@ -138,8 +138,8 @@ class PipelineCoordinator:
         """
         epsilon = 1e-6
         aligned = []
-        for ordinal, seg in enumerate(segments, start=1):
-            for cap in captures:
+        for cap in captures:
+            for ordinal, seg in enumerate(segments, start=1):
                 if seg.start_time - epsilon <= cap.start_time and cap.end_time <= seg.end_time + epsilon:
                     aligned.append(
                         SegmentCaptureData(
@@ -149,4 +149,5 @@ class PipelineCoordinator:
                             candidates=cap.candidates,
                         )
                     )
+                    break  # a capture group belongs to at most one segment
         return aligned

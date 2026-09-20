@@ -40,7 +40,9 @@ class AggregationConfig:
 @dataclass
 class PipelineConfig:
     frame_queue_size: int = 64
-    num_decode_threads: int = 2
+    # Must stay 1: parallel decode threads deliver frames out of order, which
+    # corrupts the aggregator's gap logic (it assumes chronological arrival).
+    num_decode_threads: int = 1
     num_inference_threads: int = 1
     max_concurrent_jobs: int = 1
 

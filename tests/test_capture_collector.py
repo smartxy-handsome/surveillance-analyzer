@@ -119,3 +119,17 @@ class TestSegmentCaptureCollector:
         captures = collector.get_all_captures()
         assert captures[0].start_time == 5.0
         assert captures[0].end_time == 20.0
+
+    def test_out_of_order_arrival_keeps_sane_span(self, sample_frame, sample_boxes):
+        """Frames may arrive out of order (parallel decode threads): the
+        segment span must still be (min timestamp, max timestamp)."""
+        collector = SegmentCaptureCollector()
+
+        collector.add_candidate(1, 300, 15.0, 0.9, sample_frame, sample_boxes)
+        collector.add_candidate(1, 100, 5.0, 0.7, sample_frame, sample_boxes)
+
+        captures = collector.get_all_captures()
+        assert captures[0].start_time == 5.0
+        assert captures[0].end_time == 15.0
+        timestamps = [c.timestamp for c in captures[0].candidates]
+        assert timestamps == [5.0, 15.0]
