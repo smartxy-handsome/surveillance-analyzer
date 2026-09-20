@@ -15,6 +15,12 @@ class VideoMetadataResponse(BaseModel):
     total_frames: int | None = None
 
 
+class JobProgress(BaseModel):
+    processed: int
+    total: int
+    percent: float
+
+
 class JobResponse(BaseModel):
     id: str
     filename: str
@@ -24,6 +30,7 @@ class JobResponse(BaseModel):
     total_segments: int = 0
     total_person_time: float = 0.0
     processing_time_seconds: float | None = None
+    progress: JobProgress | None = None
 
 
 class SegmentResponse(BaseModel):

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from pathlib import Path
@@ -5,7 +6,12 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 
 from src.core.timeutil import utcnow
-from src.web.schemas import JobCreateRequest, JobResponse, VideoMetadataResponse
+from src.web.schemas import JobCreateRequest, JobProgress, JobResponse, VideoMetadataResponse
+
+
+def _get_progress(app, job_id: str) -> JobProgress | None:
+    entry = getattr(app.state, "job_progress", {}).get(job_id)
+    return JobProgress(**entry) if entry else None
 
 
 def create_jobs_router() -> APIRouter:
@@ -65,6 +71,7 @@ def create_jobs_router() -> APIRouter:
                 total_segments=j.total_segments or 0,
                 total_person_time=j.total_person_time or 0.0,
                 processing_time_seconds=j.processing_time_seconds,
+                progress=_get_progress(request.app, j.id),
                 video_metadata=VideoMetadataResponse(
                     duration=j.duration_seconds,
                     fps=j.video_fps,
@@ -92,6 +99,7 @@ def create_jobs_router() -> APIRouter:
             total_segments=job.total_segments or 0,
             total_person_time=job.total_person_time or 0.0,
             processing_time_seconds=job.processing_time_seconds,
+            progress=_get_progress(request.app, job.id),
             video_metadata=VideoMetadataResponse(
                 duration=job.duration_seconds,
                 fps=job.video_fps,
@@ -246,7 +254,21 @@ async def _run_analysis(job_id: str, app):
             )
 
             t0 = time_mod.monotonic()
-            result = coordinator.run(frame_indices, meta.fps)
+
+            def progress_callback(processed: int, total: int) -> None:
+                # Runs on the worker thread; a plain dict write is GIL-safe.
+                app.state.job_progress[job_id] = {
+                    "processed": processed,
+                    "total": total,
+                    "percent": round(processed / total * 100, 1) if total else 0.0,
+                }
+
+            # coordinator.run is synchronous (thread joins inside); run it on a
+            # worker thread so the event loop keeps serving requests and the
+            # progress polling can actually get responses.
+            result = await asyncio.to_thread(
+                coordinator.run, frame_indices, meta.fps, progress_callback
+            )
             elapsed = time_mod.monotonic() - t0
 
             segments = result.segments
@@ -297,3 +319,5 @@ async def _run_analysis(job_id: str, app):
             await job_repo.update_status(job_id, "completed")
         except Exception as e:
             await job_repo.update_status(job_id, "failed", str(e))
+        finally:
+            app.state.job_progress.pop(job_id, None)

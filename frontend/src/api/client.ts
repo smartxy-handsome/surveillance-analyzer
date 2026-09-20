@@ -12,6 +12,11 @@ export interface Job {
   total_segments: number
   total_person_time: number
   processing_time_seconds?: number
+  progress?: {
+    processed: number
+    total: number
+    percent: number
+  } | null
   video_metadata?: {
     duration?: number
     fps?: number

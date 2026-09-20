@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted } from 'vue'
+import { computed, onMounted, ref, onUnmounted } from 'vue'
 import { useJobsStore } from '../stores/jobs'
 import SegmentTable from './SegmentTable.vue'
 import TimelineViewer from './TimelineViewer.vue'
@@ -8,6 +8,7 @@ import CaptureGallery from './CaptureGallery.vue'
 const props = defineProps<{ jobId: string }>()
 const store = useJobsStore()
 const polling = ref<ReturnType<typeof setInterval> | null>(null)
+const progressPercent = computed(() => store.currentJob?.progress?.percent ?? 0)
 
 onMounted(async () => {
   await store.fetchJob(props.jobId)
@@ -85,9 +86,9 @@ function getStatusText(status: string): string {
 
     <div v-if="store.currentJob.status === 'processing'" class="progress">
       <span class="progress-icon">⏳</span>
-      <span>正在处理视频...</span>
+      <span>正在处理视频... {{ progressPercent.toFixed(0) }}%</span>
       <div class="progress-bar">
-        <div class="progress-fill"></div>
+        <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
       </div>
     </div>
 
@@ -224,8 +225,7 @@ h3 .icon {
   height: 100%;
   background: var(--gradient-blue);
   border-radius: var(--radius-full);
-  animation: shimmer 2s infinite;
-  width: 30%;
+  transition: width 0.5s ease;
 }
 
 .empty {

@@ -33,6 +33,7 @@ async def client():
     app.state.capture_repo = CaptureRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
+    app.state.job_progress = {}
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -78,6 +79,33 @@ async def test_list_jobs(client):
     resp = await client.get("/api/jobs")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_job_progress_exposed(client, tmp_path, monkeypatch):
+    """Analysis progress written by the pipeline callback is exposed on the
+    job response as {processed, total, percent}."""
+    from src.web.routes import jobs as jobs_module
+
+    async def fake_run(job_id, app):
+        app.state.job_progress[job_id] = {"processed": 5, "total": 10, "percent": 50.0}
+
+    monkeypatch.setattr(jobs_module, "_run_analysis", fake_run)
+
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"\x00" * 100)
+    resp = await client.post("/api/jobs", json={"file_path": str(video)})
+    assert resp.status_code == 201
+    assert resp.json()["progress"] is None  # nothing processed at creation time
+    job_id = resp.json()["id"]
+
+    resp = await client.get(f"/api/jobs/{job_id}")
+    assert resp.status_code == 200
+    assert resp.json()["progress"] == {"processed": 5, "total": 10, "percent": 50.0}
+
+    resp = await client.get("/api/jobs")
+    progress_by_id = {j["id"]: j["progress"] for j in resp.json()}
+    assert progress_by_id[job_id] == {"processed": 5, "total": 10, "percent": 50.0}
 
 
 @pytest.mark.asyncio

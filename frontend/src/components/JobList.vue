@@ -60,6 +60,12 @@ function getStatusText(status: string): string {
               <span :class="['badge', getStatusClass(job.status)]">
                 {{ getStatusText(job.status) }}
               </span>
+              <span
+                v-if="job.status === 'processing' && job.progress"
+                class="mini-progress"
+              >
+                {{ job.progress.percent.toFixed(0) }}%
+              </span>
             </td>
             <td class="number">{{ job.total_segments }}</td>
             <td class="number">{{ job.total_person_time.toFixed(1) }}秒</td>
@@ -221,5 +227,13 @@ td {
   td:nth-child(4) {
     display: none;
   }
+}
+
+.mini-progress {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--accent-blue);
 }
 </style>

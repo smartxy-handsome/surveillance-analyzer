@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI):
     app.state.capture_repo = capture_repo
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
+    # Ephemeral per-job analysis progress (job_id -> {processed, total, percent});
+    # cleared when the job completes or fails.
+    app.state.job_progress = {}
 
     yield
 

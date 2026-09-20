@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Capture } from '../api/client'
+import { captureRole, captureRoleLabel, type CaptureRole } from '../utils/captureRoles'
 
 const props = defineProps<{
   captures: Capture[]
@@ -17,7 +18,8 @@ const dragStartY = ref(0)
 const dragStartPanX = ref(0)
 const dragStartPanY = ref(0)
 
-// Group captures by segment
+// Group captures by segment; sort each group by timestamp so the earliest
+// (appearance) comes first and the latest (departure) last.
 const groupedCaptures = computed(() => {
   const groups: Record<number, Capture[]> = {}
   for (const capture of props.captures) {
@@ -26,8 +28,15 @@ const groupedCaptures = computed(() => {
     }
     groups[capture.segment_index].push(capture)
   }
+  for (const key of Object.keys(groups)) {
+    groups[Number(key)].sort((a, b) => a.timestamp - b.timestamp)
+  }
   return groups
 })
+
+function roleOf(capture: Capture, group: Capture[]): CaptureRole {
+  return captureRole(group.findIndex((c) => c.id === capture.id), group.length)
+}
 
 const segmentIndices = computed(() => {
   return Object.keys(groupedCaptures.value)
@@ -129,6 +138,9 @@ function onWheel(e: WheelEvent) {
           class="capture-card"
           @click="openImage(capture)"
         >
+          <span class="role-badge" :class="roleOf(capture, groupedCaptures[segIdx])">
+            {{ captureRoleLabel(roleOf(capture, groupedCaptures[segIdx])) }}
+          </span>
           <img
             :src="viewMode === 'crop' ? capture.crop_url : capture.annotated_url"
             :alt="`${capture.timestamp_formatted} 的截取`"
@@ -189,6 +201,9 @@ function onWheel(e: WheelEvent) {
         <div class="lightbox-info">
           <span>时间: {{ selectedImage.timestamp_formatted }}</span>
           <span>置信度: {{ (selectedImage.confidence * 100).toFixed(1) }}%</span>
+          <span v-if="roleOf(selectedImage, groupedCaptures[selectedImage.segment_index])" class="lightbox-role">
+            {{ captureRoleLabel(roleOf(selectedImage, groupedCaptures[selectedImage.segment_index])) }}
+          </span>
         </div>
       </div>
     </div>
@@ -270,6 +285,38 @@ function onWheel(e: WheelEvent) {
   overflow: hidden;
   cursor: pointer;
   transition: all var(--transition-normal);
+  position: relative;
+}
+
+.role-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: white;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.role-badge.appearance {
+  background: rgba(63, 185, 80, 0.85);
+}
+
+.role-badge.departure {
+  background: rgba(210, 153, 34, 0.85);
+}
+
+.role-badge.both {
+  background: rgba(88, 166, 255, 0.85);
+}
+
+.lightbox-role {
+  color: var(--accent-blue);
+  font-weight: 600;
 }
 
 .capture-card:hover {
