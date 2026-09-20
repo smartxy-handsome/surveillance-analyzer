@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.timeutil import utcnow
 from src.storage.database import CaptureModel, JobModel, SegmentModel
 
 
@@ -69,9 +69,9 @@ class JobRepository:
                 job.status = status
                 job.error_message = error
                 if status == "processing":
-                    job.started_at = datetime.utcnow()
+                    job.started_at = utcnow()
                 elif status in ("completed", "failed"):
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = utcnow()
                 await session.commit()
 
     async def update_video_metadata(

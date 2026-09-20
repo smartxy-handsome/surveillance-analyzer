@@ -1,8 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+
+from src.core.timeutil import utcnow
 
 
 class Base(DeclarativeBase):
@@ -34,7 +34,7 @@ class JobModel(Base):
     total_person_time = Column(Float, default=0.0)
     processing_time_seconds = Column(Float, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -50,7 +50,7 @@ class SegmentModel(Base):
     detection_count = Column(Integer, nullable=False)
     avg_confidence = Column(Float, nullable=False)
     max_confidence = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class CaptureModel(Base):
@@ -63,7 +63,7 @@ class CaptureModel(Base):
     confidence = Column(Float, nullable=False)
     crop_path = Column(String, nullable=False)
     annotated_path = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 async def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:

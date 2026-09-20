@@ -78,16 +78,21 @@ async def test_semaphore_limits_concurrency_primitive(app_with_semaphore):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Starlette BackgroundTasks under ASGITransport do not schedule within the test's event loop; peak observed=0, test hangs")
 async def test_concurrency_gate_via_http(app_with_semaphore, tmp_path, monkeypatch):
-    """End-to-end: 4 concurrent job requests, only 2 analysis tasks enter 'processing'."""
+    """End-to-end: 4 concurrent job requests, only 2 analysis tasks enter 'processing'.
+
+    Background tasks run inside each request's ASGI cycle under ASGITransport,
+    so a fake_run blocked on an Event would deadlock the gather (the requests
+    can't finish until the tasks finish). A bounded sleep lets each task
+    release the semaphore on its own while the concurrent requests still
+    overlap enough to contend for the 2 permits.
+    """
     from src.web.routes import jobs as jobs_module
 
     app = app_with_semaphore
     entered = 0
     peak = 0
     lock = asyncio.Lock()
-    gate = asyncio.Event()
 
     async def fake_run(job_id, app):
         nonlocal entered, peak
@@ -95,7 +100,7 @@ async def test_concurrency_gate_via_http(app_with_semaphore, tmp_path, monkeypat
             async with lock:
                 entered += 1
                 peak = max(peak, entered)
-            await gate.wait()
+            await asyncio.sleep(0.05)
             async with lock:
                 entered -= 1
 
@@ -110,13 +115,6 @@ async def test_concurrency_gate_via_http(app_with_semaphore, tmp_path, monkeypat
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         await asyncio.gather(*[ac.post("/api/jobs", json={"file_path": p}) for p in paths])
-        # Yield to the event loop so Starlette background tasks get scheduled
-        for _ in range(50):
-            await asyncio.sleep(0)
-        assert peak == TEST_MAX_CONCURRENT
-        gate.set()
-        for _ in range(50):
-            await asyncio.sleep(0)
     assert peak == TEST_MAX_CONCURRENT
 
 

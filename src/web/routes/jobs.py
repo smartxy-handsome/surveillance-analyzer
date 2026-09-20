@@ -1,10 +1,10 @@
 import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 
+from src.core.timeutil import utcnow
 from src.web.schemas import JobCreateRequest, JobResponse, VideoMetadataResponse
 
 
@@ -49,7 +49,7 @@ def create_jobs_router() -> APIRouter:
             id=job.id,
             filename=job.filename,
             status=job.status,
-            created_at=job.created_at or datetime.utcnow(),
+            created_at=job.created_at or utcnow(),
         )
 
     @router.get("/jobs", response_model=list[JobResponse])
@@ -61,7 +61,7 @@ def create_jobs_router() -> APIRouter:
                 id=j.id,
                 filename=j.filename,
                 status=j.status,
-                created_at=j.created_at or datetime.utcnow(),
+                created_at=j.created_at or utcnow(),
                 total_segments=j.total_segments or 0,
                 total_person_time=j.total_person_time or 0.0,
                 processing_time_seconds=j.processing_time_seconds,
@@ -88,7 +88,7 @@ def create_jobs_router() -> APIRouter:
             id=job.id,
             filename=job.filename,
             status=job.status,
-            created_at=job.created_at or datetime.utcnow(),
+            created_at=job.created_at or utcnow(),
             total_segments=job.total_segments or 0,
             total_person_time=job.total_person_time or 0.0,
             processing_time_seconds=job.processing_time_seconds,
