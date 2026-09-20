@@ -50,7 +50,7 @@ class PipelineCoordinator:
         self._detector.load()
         queue = FrameQueue(maxsize=self._pipeline.frame_queue_size)
         aggregator = SegmentAggregator(self._aggregation)
-        collector = SegmentCaptureCollector(max_per_segment=3)
+        collector = SegmentCaptureCollector()
         stop_event = threading.Event()
         total = len(frame_indices)
 

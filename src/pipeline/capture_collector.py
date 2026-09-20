@@ -6,13 +6,14 @@ from src.core.models import CaptureCandidate, SegmentCaptureData
 class SegmentCaptureCollector:
     """Collects candidate frames during inference for later capture saving.
 
-    Maintains a per-segment buffer of top-N frames sorted by confidence.
+    Capture policy: per segment, keep one capture when the person appears
+    (first detection) and one when they leave (last detection). A segment
+    with a single detection keeps one capture.
     """
 
-    def __init__(self, max_per_segment: int = 3):
-        self._max = max_per_segment
-        # segment_key -> sorted list of CaptureCandidate (by confidence desc)
-        self._segments: dict[int, list[CaptureCandidate]] = {}
+    def __init__(self):
+        # segment_key -> {"first": CaptureCandidate, "last": CaptureCandidate}
+        self._segments: dict[int, dict[str, CaptureCandidate]] = {}
         # segment_key -> (start_time, end_time)
         self._segment_times: dict[int, tuple[float, float]] = {}
 
@@ -44,34 +45,19 @@ class SegmentCaptureCollector:
         )
 
         if segment_key not in self._segments:
-            self._segments[segment_key] = []
+            self._segments[segment_key] = {"first": candidate, "last": candidate}
             self._segment_times[segment_key] = (timestamp, timestamp)
+            return
 
-        candidates = self._segments[segment_key]
-
-        # Update end time
         start, _ = self._segment_times[segment_key]
         self._segment_times[segment_key] = (start, timestamp)
-
-        # Insert candidate maintaining sorted order (confidence desc)
-        if len(candidates) < self._max:
-            # Buffer not full, insert in sorted position
-            self._insert_sorted(candidates, candidate)
-        elif confidence > candidates[-1].confidence:
-            # Buffer full but this is better than the worst
-            candidates.pop()  # Remove lowest confidence
-            self._insert_sorted(candidates, candidate)
-        # else: ignore - lower than all current candidates
-
-    def _insert_sorted(
-        self, candidates: list[CaptureCandidate], candidate: CaptureCandidate
-    ) -> None:
-        """Insert candidate in sorted position (confidence descending)."""
-        for i, existing in enumerate(candidates):
-            if candidate.confidence > existing.confidence:
-                candidates.insert(i, candidate)
-                return
-        candidates.append(candidate)
+        # Frames may arrive slightly out of order (parallel decode threads +
+        # batched inference), so track appearance/departure by timestamp.
+        pair = self._segments[segment_key]
+        if timestamp < pair["first"].timestamp:
+            pair["first"] = candidate
+        if timestamp >= pair["last"].timestamp:
+            pair["last"] = candidate
 
     def get_all_captures(self) -> list[SegmentCaptureData]:
         """Return all collected captures, one SegmentCaptureData per segment.
@@ -80,14 +66,20 @@ class SegmentCaptureCollector:
             List of SegmentCaptureData, sorted by segment_index
         """
         result = []
-        for segment_key, candidates in self._segments.items():
+        for segment_key, pair in self._segments.items():
             start_time, end_time = self._segment_times[segment_key]
+            if pair["first"] is pair["last"] or pair["first"].frame_index == pair["last"].frame_index:
+                candidates = [pair["first"]]
+            else:
+                candidates = sorted(
+                    [pair["first"], pair["last"]], key=lambda c: c.timestamp
+                )
             result.append(
                 SegmentCaptureData(
                     segment_index=segment_key,
                     start_time=start_time,
                     end_time=end_time,
-                    candidates=list(candidates),  # Return a copy
+                    candidates=candidates,
                 )
             )
         # Sort by segment_index for consistent output
