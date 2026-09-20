@@ -119,5 +119,34 @@ class PipelineCoordinator:
 
         self._detector.unload()
         segments = aggregator.finalize()
-        captures = collector.get_all_captures()
+        captures = self._align_captures_to_segments(collector.get_all_captures(), segments)
         return PipelineResult(segments=segments, captures=captures)
+
+    @staticmethod
+    def _align_captures_to_segments(
+        captures: list[SegmentCaptureData], segments: list[TimeSegment]
+    ) -> list[SegmentCaptureData]:
+        """Keep captures only for bursts that survived aggregation, renumbered.
+
+        The collector keys candidates by the aggregator's transient burst key,
+        but ``finalize`` drops bursts shorter than ``min_segment_seconds``.
+        Without alignment the gallery would show a group for every transient
+        detection and its numbering would not match the segment table. Each
+        final segment corresponds to exactly one surviving burst, so a burst
+        is kept when its time span falls inside a final segment and its
+        ``segment_index`` becomes that segment's 1-based ordinal.
+        """
+        epsilon = 1e-6
+        aligned = []
+        for ordinal, seg in enumerate(segments, start=1):
+            for cap in captures:
+                if seg.start_time - epsilon <= cap.start_time and cap.end_time <= seg.end_time + epsilon:
+                    aligned.append(
+                        SegmentCaptureData(
+                            segment_index=ordinal,
+                            start_time=cap.start_time,
+                            end_time=cap.end_time,
+                            candidates=cap.candidates,
+                        )
+                    )
+        return aligned
