@@ -19,8 +19,7 @@ node_modules/
 # Model weights & data (download separately, not tracked)
 *.pt
 *.onnx
-data/results.db
-data/videos/
+data/
 
 # Local env / secrets
 .env
