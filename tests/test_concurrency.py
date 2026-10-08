@@ -94,7 +94,7 @@ async def test_concurrency_gate_via_http(app_with_semaphore, tmp_path, monkeypat
     peak = 0
     lock = asyncio.Lock()
 
-    async def fake_run(job_id, app):
+    async def fake_run(job_id, app, detector_factory=None):
         nonlocal entered, peak
         async with app.state.analysis_semaphore:
             async with lock:

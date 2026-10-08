@@ -14,6 +14,14 @@ def _get_progress(app, job_id: str) -> JobProgress | None:
     return JobProgress(**entry) if entry else None
 
 
+def _remove_capture_dir(job_id: str) -> None:
+    import shutil
+
+    from src.core.config import DATA_DIR
+
+    shutil.rmtree(DATA_DIR / "captures" / job_id, ignore_errors=True)
+
+
 def create_jobs_router() -> APIRouter:
     router = APIRouter(tags=["jobs"])
 
@@ -49,7 +57,10 @@ def create_jobs_router() -> APIRouter:
             )
         )
 
-        background_tasks.add_task(_run_analysis, job_id, request.app)
+        # Optional injection point: tests set app.state.detector_factory to
+        # substitute a fake DetectionEngine for end-to-end runs.
+        detector_factory = getattr(request.app.state, "detector_factory", None)
+        background_tasks.add_task(_run_analysis, job_id, request.app, detector_factory)
 
         return JobResponse(
             id=job.id,
@@ -121,9 +132,14 @@ def create_jobs_router() -> APIRouter:
         job = await job_repo.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
+        # A running analysis holds the semaphore and keeps writing rows and
+        # files; deleting mid-run would strand the pipeline and orphan files.
+        if job.status == "processing":
+            raise HTTPException(409, "Job is currently processing; wait for it to finish")
         await capture_repo.delete_by_job(job_id)
         await segment_repo.delete_by_job(job_id)
         await job_repo.delete(job_id)
+        _remove_capture_dir(job_id)
 
     @router.get("/system/paths")
     async def get_system_paths():
@@ -205,12 +221,15 @@ def create_jobs_router() -> APIRouter:
     return router
 
 
-async def _run_analysis(job_id: str, app):
+async def _run_analysis(job_id: str, app, detector_factory=None):
+    """Run the full analysis pipeline for a job.
+
+    ``detector_factory`` is injectable so tests can substitute a fake
+    DetectionEngine without loading the real YOLO model (or needing a GPU).
+    """
     async with app.state.analysis_semaphore:
         import time as time_mod
 
-        from src.core.config import load_config
-        from src.detection.yolo_detector import YOLOv8Detector
         from src.pipeline.capture_saver import CaptureSaver, get_capture_output_dir
         from src.pipeline.coordinator import PipelineCoordinator
         from src.storage.repository import CaptureCreate, SegmentCreate
@@ -237,13 +256,18 @@ async def _run_analysis(job_id: str, app):
 
             frame_indices = compute_frame_indices(meta.fps, config.sampling.fps, meta.total_frames)
 
-            detector = YOLOv8Detector(
-                model_name=config.detection.model_name,
-                device=config.detection.device,
-                target_classes=config.detection.target_classes,
-                confidence_threshold=config.detection.confidence_threshold,
-                batch_size=config.detection.batch_size,
-            )
+            if detector_factory is None:
+                from src.detection.yolo_detector import YOLOv8Detector
+
+                detector_factory = lambda: YOLOv8Detector(  # noqa: E731
+                    model_name=config.detection.model_name,
+                    device=config.detection.device,
+                    target_classes=config.detection.target_classes,
+                    confidence_threshold=config.detection.confidence_threshold,
+                    batch_size=config.detection.batch_size,
+                )
+
+            detector = detector_factory()
 
             coordinator = PipelineCoordinator(
                 reader_factory=OpenCVFrameReader,
@@ -293,7 +317,7 @@ async def _run_analysis(job_id: str, app):
 
             # Save capture images
             if captures:
-                output_dir = get_capture_output_dir(job.file_path)
+                output_dir = get_capture_output_dir(job.file_path, job_id)
                 saver = CaptureSaver(output_dir)
                 all_capture_results = []
                 for capture_data in captures:

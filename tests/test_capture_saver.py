@@ -222,3 +222,11 @@ class TestCaptureSaver:
                 assert result.confidence > 0
                 assert result.crop_path.endswith(".jpg")
                 assert result.annotated_path.endswith(".jpg")
+
+
+def test_get_capture_output_dir_keyed_by_job_id():
+    """Output dir lives under data/captures/{job_id}, not next to the video."""
+    from src.pipeline.capture_saver import get_capture_output_dir
+
+    d = get_capture_output_dir(r"D:\videos\footage.mp4", "job-42")
+    assert d.replace("\\", "/").endswith("data/captures/job-42")

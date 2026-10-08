@@ -37,6 +37,7 @@ async def client():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        ac.test_app = app  # exposed for tests that need direct repo access
         yield ac
 
 
@@ -87,7 +88,7 @@ async def test_job_progress_exposed(client, tmp_path, monkeypatch):
     job response as {processed, total, percent}."""
     from src.web.routes import jobs as jobs_module
 
-    async def fake_run(job_id, app):
+    async def fake_run(job_id, app, detector_factory=None):
         app.state.job_progress[job_id] = {"processed": 5, "total": 10, "percent": 50.0}
 
     monkeypatch.setattr(jobs_module, "_run_analysis", fake_run)
@@ -151,3 +152,59 @@ async def test_browse_directory(client, tmp_path):
 async def test_browse_not_found(client):
     resp = await client.get("/api/browse", params={"path": "Z:\\nonexistent"})
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delete_job_removes_capture_dir(client, tmp_path, monkeypatch):
+    """Deleting a job removes its capture directory from data/captures/."""
+    from src.core.config import DATA_DIR
+    from src.web.routes import jobs as jobs_module
+
+    async def fake_run(job_id, app, detector_factory=None):
+        pass
+
+    monkeypatch.setattr(jobs_module, "_run_analysis", fake_run)
+
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"\x00" * 100)
+    resp = await client.post("/api/jobs", json={"file_path": str(video)})
+    job_id = resp.json()["id"]
+
+    # Simulate captures having been written for this job
+    d = DATA_DIR / "captures" / job_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "seg1_00_1.0s_annotated.jpg").write_bytes(b"img")
+
+    resp = await client.delete(f"/api/jobs/{job_id}")
+    assert resp.status_code == 204
+    assert not d.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_job_rejects_processing(client, tmp_path):
+    """A processing job cannot be deleted (would strand the pipeline)."""
+    from src.web.routes import jobs as jobs_module
+    from src.storage.repository import JobCreate
+
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"\x00" * 100)
+    job_id = "proc-job-1"
+    await client.test_app.state.job_repo.create(
+        JobCreate(
+            id=job_id,
+            filename="test.mp4",
+            file_path=str(video.resolve()),
+            sampling_fps=3.0,
+            model_name="yolov8n.pt",
+            confidence_threshold=0.5,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+    await client.test_app.state.job_repo.update_status(job_id, "processing")
+
+    resp = await client.delete(f"/api/jobs/{job_id}")
+    assert resp.status_code == 409
+    # Job must still exist
+    resp = await client.get(f"/api/jobs/{job_id}")
+    assert resp.status_code == 200

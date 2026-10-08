@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -113,15 +112,13 @@ class CaptureSaver:
         cv2.imwrite(str(path), annotated)
 
 
-def get_capture_output_dir(video_path: str) -> str:
-    """Generate output directory path for captures.
+def get_capture_output_dir(video_path: str, job_id: str) -> str:
+    """Generate output directory path for a job's captures.
 
-    Args:
-        video_path: Path to the video file
-
-    Returns:
-        Path to output directory in same location as video
+    Captures live under data/captures/{job_id}/ instead of next to the video:
+    the source directory may be read-only, polluting it is unfriendly, and
+    keying by job_id lets job deletion clean up with a single rmtree.
     """
-    video_dir = Path(video_path).parent
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    return str(video_dir / f"captures_{timestamp}")
+    from src.core.config import DATA_DIR
+
+    return str(DATA_DIR / "captures" / job_id)

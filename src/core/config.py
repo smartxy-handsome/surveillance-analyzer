@@ -14,6 +14,10 @@ from src.core.models import (
     WebConfig,
 )
 
+# Root of runtime artifacts (results.db, videos/, captures/). Kept as a single
+# constant so every component derives its path from the same place.
+DATA_DIR = Path("data")
+
 
 def load_config(yaml_path: str | Path) -> AppConfig:
     yaml_path = Path(yaml_path)
@@ -58,9 +62,15 @@ def load_config(yaml_path: str | Path) -> AppConfig:
                     pass
                 section_map[section_name][field_name] = val
 
+    sampling = SamplingConfig(**sampling_raw) if sampling_raw else SamplingConfig()
+    # 'uniform' is the only implemented strategy; reject anything else loudly
+    # instead of silently analysing with unintended behaviour.
+    if sampling.strategy != "uniform":
+        raise ValueError(f"Unsupported sampling strategy: {sampling.strategy!r} (only 'uniform')")
+
     return AppConfig(
         video=VideoConfig(**video_raw) if video_raw else VideoConfig(),
-        sampling=SamplingConfig(**sampling_raw) if sampling_raw else SamplingConfig(),
+        sampling=sampling,
         detection=DetectionConfig(**detection_raw) if detection_raw else DetectionConfig(),
         aggregation=(
             AggregationConfig(**aggregation_raw) if aggregation_raw else AggregationConfig()
