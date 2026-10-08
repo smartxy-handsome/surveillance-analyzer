@@ -2,9 +2,8 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-import numpy as np
 
-from src.core.interfaces import DetectionEngine, FrameData, FrameDetection, FrameReader
+from src.core.interfaces import DetectionEngine, FrameData, FrameReader
 from src.core.models import (
     AggregationConfig,
     DetectionConfig,

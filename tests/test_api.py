@@ -1,6 +1,5 @@
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -183,7 +182,6 @@ async def test_delete_job_removes_capture_dir(client, tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_delete_job_rejects_processing(client, tmp_path):
     """A processing job cannot be deleted (would strand the pipeline)."""
-    from src.web.routes import jobs as jobs_module
     from src.storage.repository import JobCreate
 
     video = tmp_path / "test.mp4"
@@ -208,3 +206,17 @@ async def test_delete_job_rejects_processing(client, tmp_path):
     # Job must still exist
     resp = await client.get(f"/api/jobs/{job_id}")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_job_rejects_oversize_file(client, tmp_path, monkeypatch):
+    """Files above video.max_file_size_mb are rejected at submit time."""
+    video = tmp_path / "big.mp4"
+    video.write_bytes(b"\x00" * 100)
+
+    config = client.test_app.state.config
+    monkeypatch.setattr(config.video, "max_file_size_mb", 0)
+
+    resp = await client.post("/api/jobs", json={"file_path": str(video)})
+    assert resp.status_code == 400
+    assert "max size" in resp.json()["detail"]

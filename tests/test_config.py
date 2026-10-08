@@ -1,4 +1,3 @@
-import os
 import yaml
 import pytest
 from pathlib import Path
@@ -40,3 +39,17 @@ def test_pipeline_max_concurrent_jobs_from_yaml(tmp_path):
     p.write_text(yaml.dump(cfg))
     config = load_config(p)
     assert config.pipeline.max_concurrent_jobs == 3
+
+
+def test_web_defaults_to_loopback():
+    """Unauthenticated API must not bind a public interface by default."""
+    config = load_config(Path("config/default.yaml"))
+    assert config.web.host == "127.0.0.1"
+
+
+def test_reject_unknown_sampling_strategy(tmp_path):
+    cfg = {"sampling": {"fps": 3.0, "strategy": "random"}}
+    p = tmp_path / "custom.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="sampling strategy"):
+        load_config(p)

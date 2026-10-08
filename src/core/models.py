@@ -63,7 +63,10 @@ class StorageConfig:
 
 @dataclass
 class WebConfig:
-    host: str = "0.0.0.0"
+    # Listen on loopback by default: the API has no authentication and /browse
+    # can list any directory, so binding 0.0.0.0 would expose the whole disk
+    # to the LAN. Change explicitly to share on a network.
+    host: str = "127.0.0.1"
     port: int = 8000
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173"])
 

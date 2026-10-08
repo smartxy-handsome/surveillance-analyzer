@@ -1,10 +1,13 @@
 import argparse
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import uvicorn
 import webbrowser
+
+from src.core.config import load_config
 
 
 def open_browser(host: str, port: int):
@@ -22,15 +25,19 @@ def open_browser(host: str, port: int):
 def main():
     parser = argparse.ArgumentParser(description="Surveillance Video Analyzer")
     parser.add_argument("--dev", action="store_true", help="Development mode (no frontend mount, no auto-open)")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
+    parser.add_argument("--host", default=None, help="Bind host (overrides config)")
+    parser.add_argument("--port", type=int, default=None, help="Bind port (overrides config)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
     args = parser.parse_args()
 
-    if not args.dev and not args.no_browser:
-        threading.Thread(target=open_browser, args=(args.host, args.port), daemon=True).start()
+    config = load_config(Path("config/default.yaml"))
+    host = args.host or config.web.host
+    port = args.port or config.web.port
 
-    uvicorn.run("src.web.app:app", host=args.host, port=args.port)
+    if not args.dev and not args.no_browser and host in ("127.0.0.1", "localhost"):
+        threading.Thread(target=open_browser, args=(host, port), daemon=True).start()
+
+    uvicorn.run("src.web.app:app", host=host, port=port)
 
 
 if __name__ == "__main__":

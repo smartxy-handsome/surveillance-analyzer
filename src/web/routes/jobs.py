@@ -1,5 +1,4 @@
 import asyncio
-import os
 import uuid
 from pathlib import Path
 
@@ -39,6 +38,13 @@ def create_jobs_router() -> APIRouter:
         ext = file_path.suffix.lower()
         if ext not in config.video.supported_formats:
             raise HTTPException(400, f"Unsupported format: {ext}")
+
+        size_mb = file_path.stat().st_size / (1024 * 1024)
+        if size_mb > config.video.max_file_size_mb:
+            raise HTTPException(
+                400,
+                f"File exceeds max size ({size_mb:.0f} MB > {config.video.max_file_size_mb} MB)",
+            )
 
         job_id = str(uuid.uuid4())
 
@@ -144,7 +150,6 @@ def create_jobs_router() -> APIRouter:
     @router.get("/system/paths")
     async def get_system_paths():
         """Return default system paths (Desktop, Downloads, etc.)"""
-        import os
 
         home = Path.home()
         paths = []

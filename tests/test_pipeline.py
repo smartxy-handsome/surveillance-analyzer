@@ -1,9 +1,8 @@
-import threading
 import numpy as np
 from unittest.mock import MagicMock
 
 from src.pipeline.coordinator import PipelineCoordinator
-from src.core.interfaces import FrameDetection, FrameData, VideoMetadata
+from src.core.interfaces import FrameDetection
 from src.core.models import (
     AggregationConfig,
     DetectionConfig,

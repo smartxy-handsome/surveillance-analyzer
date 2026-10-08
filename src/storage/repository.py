@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.timeutil import utcnow
 from src.storage.database import CaptureModel, JobModel, SegmentModel

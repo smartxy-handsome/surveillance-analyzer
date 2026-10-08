@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from src.core.config import load_config
+from src.core.models import AppConfig, WebConfig
 from src.storage.database import init_db
 from src.storage.repository import CaptureRepository, JobRepository, SegmentRepository
 from src.web.routes.jobs import create_jobs_router
@@ -16,13 +17,17 @@ from src.web.routes.results import create_results_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    config = load_config(Path("config/default.yaml"))
+    # create_app may already have installed a config (production path); only
+    # load one when absent (e.g. tests injecting their own state).
+    if not hasattr(app.state, "config"):
+        config = load_config(Path("config/default.yaml"))
+        app.state.config = config
+    config = app.state.config
     session_factory = await init_db(config.storage.database_url)
     job_repo = JobRepository(session_factory)
     segment_repo = SegmentRepository(session_factory)
     capture_repo = CaptureRepository(session_factory)
 
-    app.state.config = config
     app.state.job_repo = job_repo
     app.state.segment_repo = segment_repo
     app.state.capture_repo = capture_repo
@@ -35,7 +40,18 @@ async def lifespan(app: FastAPI):
     yield
 
 
-def create_app(lifespan_fn=None) -> FastAPI:
+def create_app(lifespan_fn=None, config: AppConfig | None = None) -> FastAPI:
+    """Create the FastAPI app.
+
+    ``config`` is optional: when given (production path) it drives the CORS
+    middleware, which must be constructed before the app starts and therefore
+    cannot read app.state. Without it, a config is loaded in lifespan.
+    """
+    if config is not None:
+        cors_origins = config.web.cors_origins
+    else:
+        cors_origins = WebConfig().cors_origins
+
     app = FastAPI(
         title="Surveillance Analyzer",
         version="0.1.0",
@@ -44,11 +60,14 @@ def create_app(lifespan_fn=None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if config is not None:
+        app.state.config = config
 
     app.include_router(create_jobs_router(), prefix="/api")
     app.include_router(create_results_router(), prefix="/api")
