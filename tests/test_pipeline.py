@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from unittest.mock import MagicMock
 
@@ -143,6 +144,39 @@ def test_pipeline_dropped_frames_end_pipeline_and_counted():
     # The 1s->4s timestamp jump created by the drops exceeds merge_gap_seconds,
     # so the aggregator correctly closes the first burst and opens a second.
     assert len(result.segments) == 2
+
+
+def test_pipeline_decode_exception_propagates_and_unloads():
+    """A decode failure must propagate (job -> failed), not strand threads.
+
+    reader.open() raising simulates a video deleted while queued. The
+    exception propagates out of run(), the detector is unloaded, and the
+    inference worker exits via the queue-done signal instead of spinning.
+    """
+    mock_detector = MagicMock()
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    def open_raises(path):
+        raise FileNotFoundError(f"Cannot open video: {path}")
+
+    mock_reader = MagicMock()
+    mock_reader.open.side_effect = open_raises
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="missing.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=1.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.0),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    with pytest.raises(FileNotFoundError):
+        coordinator.run(list(range(5)), 1.0)
+
+    mock_detector.unload.assert_called_once()
 
 
 def test_captures_aligned_to_final_segments():

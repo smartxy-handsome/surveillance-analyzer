@@ -61,9 +61,9 @@ class PipelineCoordinator:
 
         def decode_worker(indices: list[int]) -> int:
             reader = self._reader_factory()
-            reader.open(self._video_path)
             dropped = 0
             try:
+                reader.open(self._video_path)
                 for idx in indices:
                     if stop_event.is_set():
                         break
@@ -73,6 +73,12 @@ class PipelineCoordinator:
                         queue.put(FrameData(index=idx, timestamp=timestamp, image=frame))
                     else:
                         dropped += 1
+            except Exception:
+                # Unblock the other decode thread(s) and make the inference
+                # worker see a clean shutdown instead of waiting on a queue
+                # whose producer died.
+                stop_event.set()
+                raise
             finally:
                 reader.close()
             return dropped
@@ -110,19 +116,29 @@ class PipelineCoordinator:
 
         # Start threads
         decode_pool = ThreadPoolExecutor(max_workers=n_threads)
-        futures = [decode_pool.submit(decode_worker, chunk) for chunk in chunks]
+        try:
+            futures = [decode_pool.submit(decode_worker, chunk) for chunk in chunks]
 
-        inference_thread = threading.Thread(target=inference_worker, daemon=True)
-        inference_thread.start()
+            inference_thread = threading.Thread(target=inference_worker, daemon=True)
+            inference_thread.start()
 
-        # Wait for decode to finish
-        dropped_frames = sum(f.result() for f in futures)
-        queue.signal_done()
+            try:
+                # Wait for decode to finish; re-raises any decode exception here
+                dropped_frames = sum(f.result() for f in futures)
+            finally:
+                # signal_done must fire even when decode raised, or the
+                # inference worker would spin forever on an empty queue.
+                queue.signal_done()
+                # Once done is signalled the worker exits as soon as the queue
+                # drains (at most one get_batch timeout later). Join without
+                # timeout: a bounded join silently truncated long CPU-bound runs
+                # while the thread kept writing to the aggregator.
+                inference_thread.join()
+        finally:
+            decode_pool.shutdown()
+            # Unload even on failure, or the model holds GPU memory forever.
+            self._detector.unload()
 
-        # Wait for inference to finish
-        inference_thread.join(timeout=300)
-
-        self._detector.unload()
         segments = aggregator.finalize()
         captures = self._align_captures_to_segments(collector.get_all_captures(), segments)
         return PipelineResult(
