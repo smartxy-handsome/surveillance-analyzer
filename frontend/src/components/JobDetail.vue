@@ -82,6 +82,19 @@ function getStatusText(status: string): string {
         <span class="meta-label">处理时间</span>
         <span class="meta-value highlight">{{ store.currentJob.processing_time_seconds.toFixed(1) }}秒</span>
       </div>
+      <div
+        class="meta-item"
+        v-if="store.currentJob.dropped_frames"
+        :title="`分析时跳过了解码失败的 ${store.currentJob.dropped_frames} 帧（源视频存在损坏片段）`"
+      >
+        <span class="meta-label">丢帧</span>
+        <span class="meta-value">{{ store.currentJob.dropped_frames }}</span>
+      </div>
+    </div>
+
+    <div v-if="store.currentJob.status === 'pending' && store.currentJob.queue_position" class="queue-note">
+      <span class="progress-icon">⏳</span>
+      <span>排队中，当前位于第 {{ store.currentJob.queue_position }} 位</span>
     </div>
 
     <div v-if="store.currentJob.status === 'processing'" class="progress">
@@ -91,7 +104,6 @@ function getStatusText(status: string): string {
         <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
       </div>
     </div>
-
     <div v-if="store.segments.length > 0">
       <h3>
         <span class="icon">📊</span>
@@ -211,6 +223,18 @@ h3 .icon {
 
 .progress-icon {
   animation: pulse 2s infinite;
+}
+
+.queue-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 .progress-bar {

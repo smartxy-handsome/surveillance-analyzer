@@ -12,6 +12,8 @@ export interface Job {
   total_segments: number
   total_person_time: number
   processing_time_seconds?: number
+  dropped_frames?: number | null
+  queue_position?: number | null
   progress?: {
     processed: number
     total: number

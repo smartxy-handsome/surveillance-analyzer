@@ -220,3 +220,49 @@ async def test_create_job_rejects_oversize_file(client, tmp_path, monkeypatch):
     resp = await client.post("/api/jobs", json={"file_path": str(video)})
     assert resp.status_code == 400
     assert "max size" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_queue_position_orders_pending_jobs(client, tmp_path):
+    """Pending jobs get 1-based FIFO queue positions by creation order.
+
+    Jobs are inserted via the repo (not POST) so no background task runs;
+    under ASGITransport a blocked _run_analysis would deadlock the request.
+    """
+    from src.storage.repository import JobCreate
+
+    repo = client.test_app.state.job_repo
+    ids = []
+    for i in range(3):
+        video = tmp_path / f"q{i}.mp4"
+        video.write_bytes(b"\x00" * 100)
+        job_id = f"queued-{i}"
+        await repo.create(
+            JobCreate(
+                id=job_id,
+                filename=f"q{i}.mp4",
+                file_path=str(video.resolve()),
+                sampling_fps=3.0,
+                model_name="yolov8n.pt",
+                confidence_threshold=0.5,
+                merge_gap_seconds=2.0,
+                min_segment_seconds=1.0,
+            )
+        )
+        ids.append(job_id)
+
+    resp = await client.get("/api/jobs")
+    by_id = {j["id"]: j for j in resp.json()}
+    # All three are pending; positions must be 1, 2, 3 in creation order
+    assert [by_id[j]["queue_position"] for j in ids] == [1, 2, 3]
+
+    # Single-job endpoint agrees with the list endpoint
+    for j in ids:
+        single = await client.get(f"/api/jobs/{j}")
+        assert single.json()["queue_position"] == by_id[j]["queue_position"]
+
+    # Once a job leaves the queue, the others renumber
+    await repo.update_status(ids[0], "processing")
+    resp = await client.get("/api/jobs")
+    by_id = {j["id"]: j for j in resp.json()}
+    assert [by_id[j]["queue_position"] for j in ids[1:]] == [1, 2]

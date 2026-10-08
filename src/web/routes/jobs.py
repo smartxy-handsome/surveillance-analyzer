@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
@@ -19,6 +20,19 @@ def _remove_capture_dir(job_id: str) -> None:
     from src.core.config import DATA_DIR
 
     shutil.rmtree(DATA_DIR / "captures" / job_id, ignore_errors=True)
+
+
+async def _queue_positions(job_repo, job_ids: list[str]) -> dict[str, int]:
+    """1-based FIFO position of each pending job in the analysis queue.
+
+    The semaphore releases waiters in acquisition order, and background tasks
+    acquire in job-creation order, so position = rank by created_at among
+    pending jobs (earliest first). Jobs not pending (or not found) get no entry.
+    """
+    pending = await job_repo.list(status="pending", limit=10000)
+    ordered = sorted(pending, key=lambda j: j.created_at or datetime.min)
+    positions = {j.id: i for i, j in enumerate(ordered, start=1)}
+    return {job_id: positions[job_id] for job_id in job_ids if job_id in positions}
 
 
 def create_jobs_router() -> APIRouter:
@@ -79,6 +93,7 @@ def create_jobs_router() -> APIRouter:
     async def list_jobs(request: Request, status: str | None = None, limit: int = 50, offset: int = 0):
         job_repo = request.app.state.job_repo
         jobs = await job_repo.list(status=status, limit=limit, offset=offset)
+        positions = await _queue_positions(job_repo, [j.id for j in jobs])
         return [
             JobResponse(
                 id=j.id,
@@ -89,6 +104,7 @@ def create_jobs_router() -> APIRouter:
                 total_person_time=j.total_person_time or 0.0,
                 processing_time_seconds=j.processing_time_seconds,
                 dropped_frames=j.dropped_frames,
+                queue_position=positions.get(j.id),
                 progress=_get_progress(request.app, j.id),
                 video_metadata=VideoMetadataResponse(
                     duration=j.duration_seconds,
@@ -109,6 +125,7 @@ def create_jobs_router() -> APIRouter:
         job = await job_repo.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
+        position = (await _queue_positions(job_repo, [job.id])).get(job.id)
         return JobResponse(
             id=job.id,
             filename=job.filename,
@@ -118,6 +135,7 @@ def create_jobs_router() -> APIRouter:
             total_person_time=job.total_person_time or 0.0,
             processing_time_seconds=job.processing_time_seconds,
             dropped_frames=job.dropped_frames,
+            queue_position=position,
             progress=_get_progress(request.app, job.id),
             video_metadata=VideoMetadataResponse(
                 duration=job.duration_seconds,

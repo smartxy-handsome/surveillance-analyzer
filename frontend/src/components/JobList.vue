@@ -61,10 +61,23 @@ function getStatusText(status: string): string {
                 {{ getStatusText(job.status) }}
               </span>
               <span
+                v-if="job.status === 'pending' && job.queue_position"
+                class="mini-queue"
+              >
+                排队 #{{ job.queue_position }}
+              </span>
+              <span
                 v-if="job.status === 'processing' && job.progress"
                 class="mini-progress"
               >
                 {{ job.progress.percent.toFixed(0) }}%
+              </span>
+              <span
+                v-if="job.status === 'completed' && job.dropped_frames"
+                class="mini-dropped"
+                :title="`分析时跳过了解码失败的 ${job.dropped_frames} 帧`"
+              >
+                丢帧 {{ job.dropped_frames }}
               </span>
             </td>
             <td class="number">{{ job.total_segments }}</td>
@@ -235,5 +248,20 @@ td {
   font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--accent-blue);
+}
+
+.mini-queue {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.mini-dropped {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--accent-red, #e25555);
+  cursor: help;
 }
 </style>
