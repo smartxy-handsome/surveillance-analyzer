@@ -45,7 +45,7 @@ class PipelineCoordinator:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> PipelineResult:
         if not frame_indices:
-            return PipelineResult(segments=[], captures=[])
+            return PipelineResult(segments=[], captures=[], dropped_frames=0)
 
         self._detector.load()
         queue = FrameQueue(maxsize=self._pipeline.frame_queue_size)
@@ -60,9 +60,10 @@ class PipelineCoordinator:
         for i, idx in enumerate(frame_indices):
             chunks[i % n_threads].append(idx)
 
-        def decode_worker(indices: list[int]) -> None:
+        def decode_worker(indices: list[int]) -> int:
             reader = self._reader_factory()
             reader.open(self._video_path)
+            dropped = 0
             try:
                 for idx in indices:
                     if stop_event.is_set():
@@ -71,15 +72,21 @@ class PipelineCoordinator:
                     ok, frame = reader.read_frame(idx)
                     if ok and frame is not None:
                         queue.put(FrameData(index=idx, timestamp=timestamp, image=frame))
+                    else:
+                        dropped += 1
             finally:
                 reader.close()
+            return dropped
 
         def inference_worker() -> None:
             processed = 0
-            while not (queue.is_done() and processed >= total):
+            while True:
                 batch = queue.get_batch(batch_size=self._detection.batch_size, timeout=0.5)
                 if not batch:
-                    if queue.is_done() and processed >= total:
+                    # Counting processed frames cannot detect the end when
+                    # decoding drops frames (they never enter the queue), so
+                    # the exit condition is "decode finished AND queue empty".
+                    if queue.is_done():
                         break
                     continue
                 images = [f.image for f in batch]
@@ -110,8 +117,7 @@ class PipelineCoordinator:
         inference_thread.start()
 
         # Wait for decode to finish
-        for f in futures:
-            f.result()
+        dropped_frames = sum(f.result() for f in futures)
         queue.signal_done()
 
         # Wait for inference to finish
@@ -120,7 +126,9 @@ class PipelineCoordinator:
         self._detector.unload()
         segments = aggregator.finalize()
         captures = self._align_captures_to_segments(collector.get_all_captures(), segments)
-        return PipelineResult(segments=segments, captures=captures)
+        return PipelineResult(
+            segments=segments, captures=captures, dropped_frames=dropped_frames
+        )
 
     @staticmethod
     def _align_captures_to_segments(

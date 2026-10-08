@@ -93,6 +93,7 @@ class JobRepository:
         total_segments: int,
         total_person_time: float,
         processing_time_seconds: float | None = None,
+        dropped_frames: int | None = None,
     ):
         async with self._session_factory() as session:
             job = await session.get(JobModel, job_id)
@@ -100,6 +101,7 @@ class JobRepository:
                 job.total_segments = total_segments
                 job.total_person_time = total_person_time
                 job.processing_time_seconds = processing_time_seconds
+                job.dropped_frames = dropped_frames
                 await session.commit()
 
     async def delete(self, job_id: str):

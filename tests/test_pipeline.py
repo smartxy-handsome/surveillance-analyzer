@@ -92,6 +92,58 @@ def test_pipeline_empty_video():
     result = coordinator.run([], 30.0)
     assert result.segments == []
     assert result.captures == []
+    assert result.dropped_frames == 0
+
+
+def test_pipeline_dropped_frames_end_pipeline_and_counted():
+    """Decode failures must not strand the inference thread.
+
+    Dropped frames never enter the queue, so the worker's exit condition has
+    to be "decode finished AND queue drained" -- not a processed-frame count.
+    The run must return (not hang until join timeout) and report the drops.
+    """
+    plan = [True, True, False, False, True]  # False = read_frame fails
+    read_count = 0
+    detect_count = 0
+
+    def mock_read_frame(index):
+        nonlocal read_count
+        ok = plan[read_count]
+        read_count += 1
+        return (ok, np.zeros((10, 10, 3), dtype=np.uint8) if ok else None)
+
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = mock_read_frame
+
+    def mock_detect(frames):
+        nonlocal detect_count
+        detect_count += 1
+        return [FrameDetection(has_person=True, confidence=0.9, boxes=[]) for _ in frames]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=1.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.0),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    # 5 frames requested, 3 decoded, 2 dropped. Must terminate quickly.
+    result = coordinator.run(list(range(5)), 1.0)
+
+    assert read_count == 5
+    assert detect_count == 3
+    assert result.dropped_frames == 2
+    # The 1s->4s timestamp jump created by the drops exceeds merge_gap_seconds,
+    # so the aggregator correctly closes the first burst and opens a second.
+    assert len(result.segments) == 2
 
 
 def test_captures_aligned_to_final_segments():

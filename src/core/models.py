@@ -111,5 +111,7 @@ class CaptureResult:
 @dataclass
 class PipelineResult:
     """Result from the detection pipeline."""
+
     segments: list[TimeSegment]
     captures: list[SegmentCaptureData]
+    dropped_frames: int = 0

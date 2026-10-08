@@ -71,6 +71,7 @@ def create_jobs_router() -> APIRouter:
                 total_segments=j.total_segments or 0,
                 total_person_time=j.total_person_time or 0.0,
                 processing_time_seconds=j.processing_time_seconds,
+                dropped_frames=j.dropped_frames,
                 progress=_get_progress(request.app, j.id),
                 video_metadata=VideoMetadataResponse(
                     duration=j.duration_seconds,
@@ -99,6 +100,7 @@ def create_jobs_router() -> APIRouter:
             total_segments=job.total_segments or 0,
             total_person_time=job.total_person_time or 0.0,
             processing_time_seconds=job.processing_time_seconds,
+            dropped_frames=job.dropped_frames,
             progress=_get_progress(request.app, job.id),
             video_metadata=VideoMetadataResponse(
                 duration=job.duration_seconds,
@@ -315,7 +317,9 @@ async def _run_analysis(job_id: str, app):
                     )
 
             total_person_time = sum(s.duration for s in segments)
-            await job_repo.update_summary(job_id, len(segments), total_person_time, elapsed)
+            await job_repo.update_summary(
+                job_id, len(segments), total_person_time, elapsed, result.dropped_frames
+            )
             await job_repo.update_status(job_id, "completed")
         except Exception as e:
             await job_repo.update_status(job_id, "failed", str(e))

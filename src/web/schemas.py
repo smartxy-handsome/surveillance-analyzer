@@ -30,6 +30,7 @@ class JobResponse(BaseModel):
     total_segments: int = 0
     total_person_time: float = 0.0
     processing_time_seconds: float | None = None
+    dropped_frames: int | None = None
     progress: JobProgress | None = None
 
 

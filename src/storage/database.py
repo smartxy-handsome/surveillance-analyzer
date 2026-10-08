@@ -33,6 +33,7 @@ class JobModel(Base):
     total_segments = Column(Integer, default=0)
     total_person_time = Column(Float, default=0.0)
     processing_time_seconds = Column(Float, nullable=True)
+    dropped_frames = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=utcnow)
     started_at = Column(DateTime, nullable=True)
@@ -71,4 +72,19 @@ async def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:
     async with engine.begin() as conn:
         # Only create tables if they don't exist (don't drop existing data)
         await conn.run_sync(Base.metadata.create_all)
+        # create_all does not add columns to existing tables; add ones introduced
+        # after the first release so old databases keep working in place.
+        for table, column in [("jobs", Column("dropped_frames", Integer, nullable=True))]:
+            await conn.run_sync(
+                lambda sync_conn, t=table, c=column: _add_column_if_missing(sync_conn, t, c)
+            )
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+def _add_column_if_missing(sync_conn, table: str, column: Column) -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(sync_conn)
+    if column.name not in insp.get_columns(table):
+        col_type = column.type.compile(sync_conn.engine.dialect)
+        sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column.name} {col_type}"))
