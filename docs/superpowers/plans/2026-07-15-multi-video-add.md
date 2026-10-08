@@ -1,6 +1,6 @@
 # 一次添加多个视频文件 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将"一次提交一个视频"扩展为"一次提交多个视频"，每个视频仍是独立 job，并加后端并发闸防止多任务抢爆 GPU。
 
@@ -49,7 +49,7 @@
 - Modify: `config/default.yaml`
 - Modify: `tests/test_config.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/test_config.py` (append a new test function at the end of the file):
 
@@ -67,12 +67,12 @@ def test_pipeline_max_concurrent_jobs_from_yaml(tmp_path):
     assert config.pipeline.max_concurrent_jobs == 3
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_config.py::test_pipeline_max_concurrent_jobs_default tests/test_config.py::test_pipeline_max_concurrent_jobs_from_yaml -v`
 Expected: FAIL with `AttributeError: 'PipelineConfig' object has no attribute 'max_concurrent_jobs'`
 
-- [ ] **Step 3: Add the field to `PipelineConfig`**
+- [x] **Step 3: Add the field to `PipelineConfig`**
 
 In `src/core/models.py`, find the `PipelineConfig` dataclass and add the new field:
 
@@ -85,7 +85,7 @@ class PipelineConfig:
     max_concurrent_jobs: int = 1
 ```
 
-- [ ] **Step 4: Add the value to the YAML config**
+- [x] **Step 4: Add the value to the YAML config**
 
 In `config/default.yaml`, update the `pipeline` section:
 
@@ -97,12 +97,12 @@ pipeline:
   max_concurrent_jobs: 1
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_config.py -v`
 Expected: PASS (all config tests, including the two new ones)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/core/models.py config/default.yaml tests/test_config.py
@@ -121,7 +121,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Modify: `tests/test_api.py`
 - Create: `tests/test_concurrency.py`
 
-- [ ] **Step 1: Write the failing concurrency test**
+- [x] **Step 1: Write the failing concurrency test**
 
 Create `tests/test_concurrency.py`:
 
@@ -207,12 +207,12 @@ async def test_concurrency_gate_limits_parallel_jobs(app_with_semaphore, tmp_pat
     await asyncio.sleep(0.2)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_concurrency.py -v`
 Expected: FAIL — either `AttributeError: 'state' object has no attribute 'analysis_semaphore'` (because `_run_analysis` references `app.state.analysis_semaphore` which we have not added yet, and the real `_run_analysis` would run before monkeypatching takes effect on the first call) or the real `_run_analysis` runs (it will try to load the YOLO model / read the file and fail). The test must not pass yet.
 
-- [ ] **Step 3: Initialize the semaphore in `lifespan`**
+- [x] **Step 3: Initialize the semaphore in `lifespan`**
 
 In `src/web/app.py`, add the `import asyncio` at the top (with the other imports) and initialize the semaphore inside the `lifespan` function. The full updated `lifespan`:
 
@@ -253,7 +253,7 @@ async def lifespan(app: FastAPI):
 
 (Rest of `app.py` — `create_app`, `app = create_app()` — stays unchanged.)
 
-- [ ] **Step 4: Wrap `_run_analysis` with the semaphore**
+- [x] **Step 4: Wrap `_run_analysis` with the semaphore**
 
 In `src/web/routes/jobs.py`, modify `_run_analysis` so its entire body is wrapped in `async with app.state.analysis_semaphore:`. The function currently starts like this:
 
@@ -378,7 +378,7 @@ async def _run_analysis(job_id: str, app):
 
 (Only the `async with app.state.analysis_semaphore:` wrapper and one level of indentation are added; the inner logic is identical to the original.)
 
-- [ ] **Step 5: Update the shared `client` fixture to set the semaphore**
+- [x] **Step 5: Update the shared `client` fixture to set the semaphore**
 
 In `tests/test_api.py`, the `client` fixture uses `noop_lifespan` and sets `app.state` manually, so it bypasses the real `lifespan` that now creates `analysis_semaphore`. Add the semaphore to the fixture so existing tests (which trigger `_run_analysis` via `BackgroundTasks`) don't hit `AttributeError`.
 
@@ -411,17 +411,17 @@ async def client():
         yield ac
 ```
 
-- [ ] **Step 6: Run the concurrency test to verify it passes**
+- [x] **Step 6: Run the concurrency test to verify it passes**
 
 Run: `uv run pytest tests/test_concurrency.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Run the full backend test suite to verify no regressions**
+- [x] **Step 7: Run the full backend test suite to verify no regressions**
 
 Run: `uv run pytest -v`
 Expected: PASS (all tests, including `test_api.py` and `test_concurrency.py`). Note: tests that trigger the real `_run_analysis` (e.g. `test_create_job`) may leave the job in `failed` status if no GPU is present — that is pre-existing behavior and the assertions in those tests only check the `201`/`pending` creation response, which still holds.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/web/app.py src/web/routes/jobs.py tests/test_api.py tests/test_concurrency.py
@@ -438,7 +438,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Modify: `frontend/package.json`
 - Create: `frontend/vitest.config.ts`
 
-- [ ] **Step 1: Install test dependencies**
+- [x] **Step 1: Install test dependencies**
 
 Run from the `frontend/` directory:
 
@@ -449,7 +449,7 @@ npm install -D vitest @vue/test-utils jsdom
 
 (Do not pin versions — let npm resolve the latest versions compatible with the installed Vite. If the install fails due to a Vite major-version mismatch, install the `vitest` major that matches the installed `vite` — check with `npm ls vite` first.)
 
-- [ ] **Step 2: Add the vitest config**
+- [x] **Step 2: Add the vitest config**
 
 Create `frontend/vitest.config.ts`:
 
@@ -465,7 +465,7 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 3: Add test scripts to `package.json`**
+- [x] **Step 3: Add test scripts to `package.json`**
 
 In `frontend/package.json`, add `test` and `test:watch` scripts alongside the existing `dev`/`build`/`preview` scripts in the `"scripts"` block:
 
@@ -479,7 +479,7 @@ In `frontend/package.json`, add `test` and `test:watch` scripts alongside the ex
   },
 ```
 
-- [ ] **Step 4: Verify vitest runs (no tests yet)**
+- [x] **Step 4: Verify vitest runs (no tests yet)**
 
 Run from `frontend/`:
 
@@ -490,7 +490,7 @@ npm test
 
 Expected: vitest runs and reports "No test files found" (exit code may be non-zero due to no tests — that's fine for this step; the goal is to confirm vitest is installed and the config is valid).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/package.json frontend/package-lock.json frontend/vitest.config.ts
@@ -507,7 +507,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Create: `frontend/src/utils/submitItems.ts`
 - Create: `frontend/src/utils/submitItems.spec.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/src/utils/submitItems.spec.ts`:
 
@@ -590,7 +590,7 @@ describe('basename', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run from `frontend/`:
 
@@ -601,7 +601,7 @@ npm test -- src/utils/submitItems.spec.ts
 
 Expected: FAIL — `Cannot find module './submitItems'`
 
-- [ ] **Step 3: Implement `submitItems.ts`**
+- [x] **Step 3: Implement `submitItems.ts`**
 
 Create `frontend/src/utils/submitItems.ts`:
 
@@ -664,7 +664,7 @@ export async function submitItems(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run from `frontend/`:
 
@@ -675,7 +675,7 @@ npm test -- src/utils/submitItems.spec.ts
 
 Expected: PASS (all `submitItems` / `extractError` / `basename` tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/utils/submitItems.ts frontend/src/utils/submitItems.spec.ts
@@ -692,7 +692,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Create: `frontend/src/components/PendingList.vue`
 - Create: `frontend/src/components/PendingList.spec.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/src/components/PendingList.spec.ts`:
 
@@ -780,7 +780,7 @@ describe('PendingList', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run from `frontend/`:
 
@@ -791,7 +791,7 @@ npm test -- src/components/PendingList.spec.ts
 
 Expected: FAIL — `Cannot find module './PendingList.vue'`
 
-- [ ] **Step 3: Implement `PendingList.vue`**
+- [x] **Step 3: Implement `PendingList.vue`**
 
 Create `frontend/src/components/PendingList.vue`:
 
@@ -933,7 +933,7 @@ const emit = defineEmits<{
 </style>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run from `frontend/`:
 
@@ -944,7 +944,7 @@ npm test -- src/components/PendingList.spec.ts
 
 Expected: PASS (all 6 PendingList tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/components/PendingList.vue frontend/src/components/PendingList.spec.ts
@@ -961,7 +961,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Modify: `frontend/src/components/FileBrowser.vue`
 - Create: `frontend/src/components/FileBrowser.spec.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/src/components/FileBrowser.spec.ts`:
 
@@ -1058,7 +1058,7 @@ describe('FileBrowser multi-select', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run from `frontend/`:
 
@@ -1069,7 +1069,7 @@ npm test -- src/components/FileBrowser.spec.ts
 
 Expected: FAIL — the old `FileBrowser` emits a single string and has no `.confirm-btn`, so `wrapper.emitted('select')` will be `undefined` or have the wrong shape.
 
-- [ ] **Step 3: Rework `FileBrowser.vue` for multi-select**
+- [x] **Step 3: Rework `FileBrowser.vue` for multi-select**
 
 Replace the `<script setup>` block of `frontend/src/components/FileBrowser.vue` with the multi-select version. Keep the `<template>` and `<style>` mostly as-is, but add a confirm bar and selected styling (shown in the next step). New `<script setup>`:
 
@@ -1152,7 +1152,7 @@ defineExpose({ open })
 </script>
 ```
 
-- [ ] **Step 4: Update the `FileBrowser.vue` template to reflect selection and add a confirm bar**
+- [x] **Step 4: Update the `FileBrowser.vue` template to reflect selection and add a confirm bar**
 
 In the `<template>` of `frontend/src/components/FileBrowser.vue`, make two changes:
 
@@ -1228,7 +1228,7 @@ In the `<template>` of `frontend/src/components/FileBrowser.vue`, make two chang
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run from `frontend/`:
 
@@ -1239,7 +1239,7 @@ npm test -- src/components/FileBrowser.spec.ts
 
 Expected: PASS (all 3 FileBrowser tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/components/FileBrowser.vue frontend/src/components/FileBrowser.spec.ts
@@ -1256,7 +1256,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Modify: `frontend/src/components/VideoUploader.vue`
 - Modify: `frontend/src/App.vue`
 
-- [ ] **Step 1: Rewrite `VideoUploader.vue` to manage a pending list and batch-submit**
+- [x] **Step 1: Rewrite `VideoUploader.vue` to manage a pending list and batch-submit**
 
 Replace the entire contents of `frontend/src/components/VideoUploader.vue` with:
 
@@ -1490,7 +1490,7 @@ form {
 
 Note: `PendingList` now receives a `submitting` prop so it can disable its button while submitting. Update `PendingList.vue`'s props and submit button accordingly in Step 2.
 
-- [ ] **Step 2: Add the `submitting` prop to `PendingList.vue`**
+- [x] **Step 2: Add the `submitting` prop to `PendingList.vue`**
 
 In `frontend/src/components/PendingList.vue`, update the props definition and the submit button:
 
@@ -1524,7 +1524,7 @@ Add a disabled style inside `<style scoped>`:
 }
 ```
 
-- [ ] **Step 3: Update `App.vue` — new jobs refresh the list (no navigation); history opens a job**
+- [x] **Step 3: Update `App.vue` — new jobs refresh the list (no navigation); history opens a job**
 
 In `frontend/src/App.vue`, replace the `<script setup>` block and wire two events. New `<script setup>`:
 
@@ -1564,7 +1564,7 @@ In the `<template>`, update the `<VideoUploader>` usage (inside the `v-if="!curr
       </template>
 ```
 
-- [ ] **Step 4: Run the full frontend test suite**
+- [x] **Step 4: Run the full frontend test suite**
 
 Run from `frontend/`:
 
@@ -1575,7 +1575,7 @@ npm test
 
 Expected: PASS (all submitItems, PendingList, and FileBrowser tests). The `submitting` prop added to `PendingList` is optional, so the existing PendingList tests still pass.
 
-- [ ] **Step 5: Verify the frontend type-checks and builds**
+- [x] **Step 5: Verify the frontend type-checks and builds**
 
 Run from `frontend/`:
 
@@ -1586,7 +1586,7 @@ npm run build
 
 Expected: `vue-tsc` type-check passes and `vite build` completes with no errors. If `vue-tsc` reports a type error in the FileBrowser test's `vi.fn<...>()` generic, simplify the mock to `vi.fn()` (drop the explicit generic) — the assertions do not depend on it.
 
-- [ ] **Step 6: Run the backend test suite once more**
+- [x] **Step 6: Run the backend test suite once more**
 
 Run from the project root:
 
@@ -1596,7 +1596,7 @@ uv run pytest -v
 
 Expected: PASS (no backend changes in this task; sanity check that nothing regressed).
 
-- [ ] **Step 7: Manual end-to-end verification**
+- [x] **Step 7: Manual end-to-end verification**
 
 1. Start the backend: `uv run uvicorn src.web.app:app --reload` (from project root).
 2. Start the frontend: `cd frontend && npm run dev`.
@@ -1607,7 +1607,7 @@ Expected: PASS (no backend changes in this task; sanity check that nothing regre
 7. Confirm the page does **not** navigate away on submit.
 8. Click 查看 on a job to open its detail; click 返回列表 to return.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/components/VideoUploader.vue frontend/src/components/PendingList.vue frontend/src/App.vue
