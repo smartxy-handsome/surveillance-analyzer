@@ -46,14 +46,20 @@ def create_jobs_router() -> APIRouter:
         job_repo = request.app.state.job_repo
 
         file_path = Path(body.file_path)
-        if not file_path.exists():
+        try:
+            st = file_path.stat()
+        except OSError:
             raise HTTPException(400, f"File not found: {body.file_path}")
+        # A directory renamed to ".mp4" would otherwise pass validation here
+        # and only blow up deep inside the analysis job.
+        if not file_path.is_file():
+            raise HTTPException(400, f"Not a file: {body.file_path}")
 
         ext = file_path.suffix.lower()
         if ext not in config.video.supported_formats:
             raise HTTPException(400, f"Unsupported format: {ext}")
 
-        size_mb = file_path.stat().st_size / (1024 * 1024)
+        size_mb = st.st_size / (1024 * 1024)
         if size_mb > config.video.max_file_size_mb:
             raise HTTPException(
                 400,
@@ -265,6 +271,11 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
         capture_repo = app.state.capture_repo
 
         try:
+            # The job may have been deleted while queued behind the semaphore;
+            # bail out instead of burning a slot on an AttributeError below.
+            if await job_repo.get(job_id) is None:
+                return
+
             await job_repo.update_status(job_id, "processing")
             job = await job_repo.get(job_id)
 

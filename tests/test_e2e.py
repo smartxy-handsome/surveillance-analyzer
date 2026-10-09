@@ -44,6 +44,22 @@ FPS = 10.0
 N_FRAMES = 30
 PERSON_FIRST, PERSON_LAST = 10, 29  # bright frames = "person" frames
 
+# Real-footage fixture (user-provided surveillance clip). Tests using it are
+# skipped when the file is absent so the suite still runs anywhere.
+REAL_VIDEO = Path(r"D:\claude\video.mp4")
+
+needs_real_video = pytest.mark.skipif(
+    not REAL_VIDEO.exists(), reason=f"real test video not found: {REAL_VIDEO}"
+)
+
+
+@pytest.fixture
+def real_video_meta():
+    reader = OpenCVFrameReader()
+    meta = reader.open(str(REAL_VIDEO))
+    reader.close()
+    return meta
+
 
 def write_synthetic_video(path: Path, person_first=PERSON_FIRST, person_last=PERSON_LAST):
     """30 frames @ 10fps; frames in [person_first, person_last] are white."""
@@ -205,3 +221,68 @@ async def test_api_end_to_end_synthetic_video(e2e_client, tmp_path):
         assert resp.status_code == 204
         assert not capture_dir.exists()
         shutil.rmtree(capture_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Real-footage tests (D:\claude\video.mp4): actual codec, actual frame sizes.
+# Only the detector is faked -- the whole decode/sample/aggregate path runs
+# against genuine surveillance content. The clip is ~74 minutes, so tests
+# slice the first ~20 seconds to stay fast.
+# ---------------------------------------------------------------------------
+
+REAL_VIDEO_SECONDS = 20
+
+
+@needs_real_video
+def test_reader_real_video_metadata_and_decode(real_video_meta):
+    assert real_video_meta.fps > 0
+    assert real_video_meta.total_frames > 0
+    assert real_video_meta.width > 0 and real_video_meta.height > 0
+
+    reader = OpenCVFrameReader()
+    reader.open(str(REAL_VIDEO))
+    try:
+        for idx in (0, 8, 100):
+            ok, frame = reader.read_frame(idx)
+            assert ok and frame is not None
+            assert frame.shape[:2] == (real_video_meta.height, real_video_meta.width)
+    finally:
+        reader.close()
+
+
+@needs_real_video
+def test_pipeline_real_video_first_seconds(real_video_meta):
+    """Pipeline mechanics on real footage: no drops, captures match segments.
+
+    The fake detector keys on frame brightness, so segment counts depend on
+    the content; the assertions are content-independent invariants.
+    """
+    sampling = SamplingConfig(fps=3.0)
+    detection = DetectionConfig(batch_size=8)
+    aggregation = AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=1.0)
+
+    max_index = int(real_video_meta.fps * REAL_VIDEO_SECONDS)
+    indices = [i for i in compute_frame_indices(
+        real_video_meta.fps, sampling.fps, real_video_meta.total_frames
+    ) if i <= max_index]
+    assert len(indices) >= 40  # ~20s at 3fps
+
+    coordinator = PipelineCoordinator(
+        reader_factory=OpenCVFrameReader,
+        video_path=str(REAL_VIDEO),
+        detector=BrightFrameDetector(threshold=60),
+        sampling_config=sampling,
+        detection_config=detection,
+        aggregation_config=aggregation,
+        pipeline_config=PipelineConfig(frame_queue_size=64, num_decode_threads=1),
+    )
+
+    result = coordinator.run(indices, real_video_meta.fps)
+
+    # Real footage must decode cleanly (sequential reader handles long-GOP)
+    assert result.dropped_frames == 0
+    # Every surviving segment produced a capture group, and nothing else
+    assert len(result.captures) == len(result.segments)
+    for seg, cap in zip(result.segments, result.captures):
+        assert seg.start_time <= cap.candidates[0].timestamp
+        assert cap.candidates[-1].timestamp <= seg.end_time

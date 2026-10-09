@@ -1,5 +1,13 @@
 # Person Capture Feature Design
 
+> **Status: partially superseded by the implementation.** This document reflects
+> the original design. The shipped behavior differs in two ways: captures are
+> the person's **appearance and departure** frames (one pair per segment), not
+> the top-3 frames by confidence; and they are saved under
+> `data/captures/{job_id}/` (deleted with the job), not in a
+> `captures_YYYY-MM-DD_HHMMSS` folder next to the video. The plan checkbox in
+> this file is historical record, not a task list.
+
 ## Overview
 
 Add the ability to capture and save images of detected persons during video analysis. For each time segment where a person is detected, save 3 representative frames (highest confidence) as both cropped person regions and annotated full frames.

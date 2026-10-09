@@ -113,6 +113,10 @@ class PipelineCoordinator:
                 processed += len(batch)
                 if progress_callback:
                     progress_callback(processed, total)
+            # Dropped frames never enter `processed`, so the last per-batch
+            # update may leave the bar short of 100%; close it out here.
+            if progress_callback:
+                progress_callback(total, total)
 
         # Start threads
         decode_pool = ThreadPoolExecutor(max_workers=n_threads)
