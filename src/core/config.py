@@ -68,6 +68,16 @@ def load_config(yaml_path: str | Path) -> AppConfig:
     if sampling.strategy != "uniform":
         raise ValueError(f"Unsupported sampling strategy: {sampling.strategy!r} (only 'uniform')")
 
+    pipeline = PipelineConfig(**pipeline_raw) if pipeline_raw else PipelineConfig()
+    # Parallel decode threads deliver frames out of order, which corrupts the
+    # aggregator's gap logic (it assumes chronological arrival). Until the
+    # pipeline gains a reordering buffer, 1 is the only correct value.
+    if pipeline.num_decode_threads != 1:
+        raise ValueError(
+            f"pipeline.num_decode_threads must be 1 (got {pipeline.num_decode_threads}): "
+            "parallel decoding breaks chronological aggregation"
+        )
+
     return AppConfig(
         video=VideoConfig(**video_raw) if video_raw else VideoConfig(),
         sampling=sampling,
@@ -75,7 +85,7 @@ def load_config(yaml_path: str | Path) -> AppConfig:
         aggregation=(
             AggregationConfig(**aggregation_raw) if aggregation_raw else AggregationConfig()
         ),
-        pipeline=PipelineConfig(**pipeline_raw) if pipeline_raw else PipelineConfig(),
+        pipeline=pipeline,
         storage=StorageConfig(**storage_raw) if storage_raw else StorageConfig(),
         web=WebConfig(**web_raw) if web_raw else WebConfig(),
     )

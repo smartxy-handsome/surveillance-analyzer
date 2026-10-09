@@ -53,3 +53,12 @@ def test_reject_unknown_sampling_strategy(tmp_path):
     p.write_text(yaml.dump(cfg))
     with pytest.raises(ValueError, match="sampling strategy"):
         load_config(p)
+
+
+def test_reject_parallel_decode_threads(tmp_path):
+    """Only 1 decode thread aggregates chronologically; >1 must fail loudly."""
+    cfg = {"pipeline": {"num_decode_threads": 2}}
+    p = tmp_path / "custom.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="num_decode_threads"):
+        load_config(p)

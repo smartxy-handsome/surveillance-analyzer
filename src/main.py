@@ -8,6 +8,7 @@ import uvicorn
 import webbrowser
 
 from src.core.config import load_config
+from src.web.app import create_app
 
 
 def open_browser(host: str, port: int):
@@ -37,7 +38,11 @@ def main():
     if not args.dev and not args.no_browser and host in ("127.0.0.1", "localhost"):
         threading.Thread(target=open_browser, args=(host, port), daemon=True).start()
 
-    uvicorn.run("src.web.app:app", host=host, port=port)
+    # Pass the config in explicitly: uvicorn would otherwise import the
+    # module-level `app` built without one, and web.cors_origins would be
+    # silently ignored.
+    app = create_app(config=config)
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

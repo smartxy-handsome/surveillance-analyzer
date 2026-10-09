@@ -266,3 +266,62 @@ async def test_queue_position_orders_pending_jobs(client, tmp_path):
     resp = await client.get("/api/jobs")
     by_id = {j["id"]: j for j in resp.json()}
     assert [by_id[j]["queue_position"] for j in ids[1:]] == [1, 2]
+
+
+def test_create_app_uses_config_cors_origins():
+    """create_app(config=...) wires web.cors_origins into the middleware.
+
+    The production entrypoint (src.main) loads the config and passes it here;
+    the middleware is built at app-construction time and cannot read
+    app.state, so this is the only place the config can reach it.
+    """
+    from src.core.models import AppConfig, WebConfig
+    from src.web.app import create_app
+
+    config = AppConfig(web=WebConfig(cors_origins=["http://example.test:5173"]))
+    app = create_app(config=config)
+    middleware = next(
+        m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"
+    )
+    assert middleware.kwargs["allow_origins"] == ["http://example.test:5173"]
+
+
+@pytest.mark.asyncio
+async def test_run_analysis_skips_deleted_queued_job(client, tmp_path, monkeypatch):
+    """A job deleted while queued is skipped, not crashed, when its turn comes.
+
+    Previously _run_analysis unconditionally dereferenced job.file_path and
+    the AttributeError was swallowed into a confusing 'failed' write on a
+    row that no longer existed -- while holding a semaphore slot.
+    """
+    from src.web.routes import jobs as jobs_module
+    from src.storage.repository import JobCreate
+
+    async def fake_run(job_id, app, detector_factory=None):
+        await jobs_module._run_analysis(job_id, app, detector_factory)
+
+    # No monkeypatch: we want the REAL _run_analysis; the job's file_path
+    # points at a real file so only the deleted-row path is exercised.
+    video = tmp_path / "q.mp4"
+    video.write_bytes(b"\x00" * 100)
+    repo = client.test_app.state.job_repo
+    job_id = "deleted-queued-1"
+    await repo.create(
+        JobCreate(
+            id=job_id,
+            filename="q.mp4",
+            file_path=str(video.resolve()),
+            sampling_fps=3.0,
+            model_name="yolov8n.pt",
+            confidence_threshold=0.5,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+    # The job is deleted (by the user) while still pending in the queue
+    await repo.delete(job_id)
+
+    # Its turn comes: must return without raising and without writing
+    # a 'failed' status for a non-existent row.
+    await jobs_module._run_analysis(job_id, client.test_app, None)
+    assert await repo.get(job_id) is None
