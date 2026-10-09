@@ -82,9 +82,13 @@ async def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:
 
 
 def _add_column_if_missing(sync_conn, table: str, column: Column) -> None:
-    from sqlalchemy import inspect, text
+    from sqlalchemy import text
 
-    insp = inspect(sync_conn)
-    if column.name not in insp.get_columns(table):
+    # PRAGMA instead of Inspector: within the engine.begin() transaction the
+    # inspector's reflection can serve stale schema info right after an ALTER,
+    # turning a restart into a spurious "duplicate column name" crash.
+    rows = sync_conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    existing = {row[1] for row in rows}
+    if column.name not in existing:
         col_type = column.type.compile(sync_conn.engine.dialect)
         sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column.name} {col_type}"))
