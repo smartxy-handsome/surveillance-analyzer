@@ -1,8 +1,5 @@
-import json
-
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from sse_starlette.sse import EventSourceResponse
 
 from src.utils.time_format import seconds_to_hms
 from src.web.schemas import CaptureResponse, SegmentResponse
@@ -35,50 +32,6 @@ def create_results_router() -> APIRouter:
             )
             for s in segments
         ]
-
-    @router.get("/jobs/{job_id}/progress")
-    async def progress_stream(request: Request, job_id: str):
-        job_repo = request.app.state.job_repo
-        job = await job_repo.get(job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
-
-        async def event_generator():
-            import asyncio
-
-            while True:
-                job = await job_repo.get(job_id)
-                if not job:
-                    break
-                if job.status == "completed":
-                    yield {
-                        "event": "complete",
-                        "data": json.dumps(
-                            {
-                                "total_segments": job.total_segments or 0,
-                                "total_person_time": job.total_person_time or 0.0,
-                            }
-                        ),
-                    }
-                    break
-                elif job.status == "failed":
-                    yield {
-                        "event": "error",
-                        "data": json.dumps({"message": job.error_message or "Unknown error"}),
-                    }
-                    break
-                else:
-                    yield {
-                        "event": "progress",
-                        "data": json.dumps(
-                            {
-                                "status": job.status,
-                            }
-                        ),
-                    }
-                await asyncio.sleep(1)
-
-        return EventSourceResponse(event_generator())
 
     @router.get("/jobs/{job_id}/captures", response_model=list[CaptureResponse])
     async def get_captures(request: Request, job_id: str):
