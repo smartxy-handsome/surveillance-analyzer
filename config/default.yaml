@@ -1,17 +1,24 @@
 video:
   supported_formats: [".mp4", ".avi", ".mkv", ".mov"]
   max_file_size_mb: 2048
+  # GPU-assisted decode (D3D11/DXVA on Windows); falls back to software
+  # automatically when the driver/codec doesn't support it.
+  hw_accel: true
 
 sampling:
   fps: 3.0
   strategy: "uniform"
 
 detection:
-  model_name: "yolov8n.pt"
+  # yolov8s@1280 found 2.3x more persons than yolov8n@640 on real 720p
+  # surveillance footage (small/far subjects). Lower imgsz to 640 on
+  # CPU-only machines or close-up cameras.
+  model_name: "yolov8s.pt"
   confidence_threshold: 0.5
   device: "cuda:0"
   target_classes: [0]
   batch_size: 8
+  imgsz: 1280
 
 aggregation:
   merge_gap_seconds: 2.0

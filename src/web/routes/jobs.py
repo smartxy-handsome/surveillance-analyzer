@@ -280,7 +280,7 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
             job = await job_repo.get(job_id)
 
             # Read metadata with a temporary reader
-            meta_reader = OpenCVFrameReader()
+            meta_reader = OpenCVFrameReader(hw_accel=config.video.hw_accel)
             meta = meta_reader.open(job.file_path)
             meta_reader.close()
 
@@ -299,12 +299,13 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                     target_classes=config.detection.target_classes,
                     confidence_threshold=config.detection.confidence_threshold,
                     batch_size=config.detection.batch_size,
+                    imgsz=config.detection.imgsz,
                 )
 
             detector = detector_factory()
 
             coordinator = PipelineCoordinator(
-                reader_factory=OpenCVFrameReader,
+                reader_factory=lambda: OpenCVFrameReader(hw_accel=config.video.hw_accel),
                 video_path=job.file_path,
                 detector=detector,
                 sampling_config=config.sampling,

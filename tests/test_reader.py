@@ -90,3 +90,33 @@ class TestOpenCVFrameReaderSequentialAccess:
             assert frame is None
         finally:
             reader.close()
+
+
+def test_hw_accel_reader_decodes_or_falls_back(tmp_path):
+    """hw_accel=True decodes every frame; machines without GPU decode fall
+    back to software transparently (same frames either way)."""
+    import cv2
+    import numpy as np
+
+    from src.video.reader import OpenCVFrameReader
+
+    path = tmp_path / "hw.avi"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (64, 48))
+    assert writer.isOpened()
+    for i in range(20):
+        frame = np.full((48, 64, 3), i * 12, dtype=np.uint8)
+        writer.write(frame)
+    writer.release()
+
+    reader = OpenCVFrameReader(hw_accel=True)
+    reader.open(str(path))
+    try:
+        decoded = []
+        for i in range(20):
+            ok, frame = reader.read_frame(i)
+            assert ok and frame is not None
+            decoded.append(int(frame.mean()))
+    finally:
+        reader.close()
+    # Brightness increases monotonically: frames are in order, not corrupted
+    assert decoded == sorted(decoded)

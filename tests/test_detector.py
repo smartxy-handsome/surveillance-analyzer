@@ -116,3 +116,40 @@ def test_classifier_no_person():
     classifier = PersonClassifier(confidence_threshold=0.5)
     det = FrameDetection(has_person=False, confidence=0.0, boxes=[])
     assert classifier.classify(det) is False
+
+
+@patch("src.detection.yolo_detector.YOLO")
+def test_predict_receives_imgsz(mock_yolo_cls):
+    """The configured imgsz must reach ultralytics predict."""
+    mock_model = MagicMock()
+    mock_yolo_cls.return_value = mock_model
+    mock_model.predict.return_value = []
+
+    detector = YOLOv8Detector(model_name="yolov8s.pt", device="cuda:0", imgsz=1280)
+    detector.load()
+    detector.detect([np.zeros((10, 10, 3), dtype=np.uint8)])
+
+    assert mock_model.predict.call_args.kwargs["imgsz"] == 1280
+
+
+@patch("src.detection.yolo_detector.torch")
+@patch("src.detection.yolo_detector.YOLO")
+def test_device_falls_back_to_cpu_without_cuda(mock_yolo_cls, mock_torch):
+    """A configured CUDA device on a CPU-only machine resolves to CPU once."""
+    mock_torch.cuda.is_available.return_value = False
+    detector = YOLOv8Detector(model_name="yolov8s.pt", device="cuda:0")
+    detector.load()
+
+    mock_yolo_cls.assert_called_once_with("yolov8s.pt")
+    # resolve_device semantics: predict calls use the resolved device via
+    # ultralytics defaults; the detector must not have kept cuda configured.
+    assert detector._device == "cpu"
+
+
+@patch("src.detection.yolo_detector.torch")
+@patch("src.detection.yolo_detector.YOLO")
+def test_device_kept_when_cuda_available(mock_yolo_cls, mock_torch):
+    mock_torch.cuda.is_available.return_value = True
+    detector = YOLOv8Detector(device="cuda:0")
+    detector.load()
+    assert detector._device == "cuda:0"

@@ -13,17 +13,36 @@ class OpenCVFrameReader(FrameReader):
     This reader therefore keeps a cursor of the decoder position and moves
     forward with ``grab()``; a backwards request reopens the video and
     decodes from the start, which is the only reliable path.
+
+    With ``hw_accel=True`` the capture tries GPU-assisted decoding
+    (D3D11/DXVA on Windows) and falls back to software when the driver or
+    FFmpeg build cannot provide it.
     """
 
-    def __init__(self):
+    def __init__(self, hw_accel: bool = False):
         self._cap: cv2.VideoCapture | None = None
         self._path: str | None = None
         self._cursor = 0  # index of the next frame the decoder will return
+        self._hw_accel = hw_accel
+        # Capture params reused for every (re)open so software fallback is
+        # consistent across the reader's lifetime.
+        self._open_params = (
+            [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY]
+            if hw_accel
+            else []
+        )
+
+    def _open_capture(self, path: str) -> cv2.VideoCapture:
+        cap = cv2.VideoCapture(path, cv2.CAP_FFMPEG, self._open_params) if self._open_params else cv2.VideoCapture(path)
+        if not cap.isOpened() and self._open_params:
+            # Hardware decode unavailable for this file/driver: retry software.
+            cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            raise FileNotFoundError(f"Cannot open video: {path}")
+        return cap
 
     def open(self, path: str) -> VideoMetadata:
-        self._cap = cv2.VideoCapture(path)
-        if not self._cap.isOpened():
-            raise FileNotFoundError(f"Cannot open video: {path}")
+        self._cap = self._open_capture(path)
         self._path = path
         self._cursor = 0
 
@@ -49,9 +68,7 @@ class OpenCVFrameReader(FrameReader):
         if index < self._cursor:
             # Backwards jump: seeking is unreliable, reopen and decode from the start.
             self._cap.release()
-            self._cap = cv2.VideoCapture(self._path)
-            if not self._cap.isOpened():
-                raise FileNotFoundError(f"Cannot open video: {self._path}")
+            self._cap = self._open_capture(self._path)
             self._cursor = 0
 
         while self._cursor < index:

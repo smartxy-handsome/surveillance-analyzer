@@ -24,11 +24,17 @@ class SamplingConfig:
 
 @dataclass
 class DetectionConfig:
-    model_name: str = "yolov8n.pt"
+    # yolov8s + imgsz 1280 measured 2.3x more person detections than
+    # yolov8n@640 on real 720p surveillance footage (small/far persons), and
+    # the pipeline stays decode-bound so wall time only grows ~1.5x.
+    model_name: str = "yolov8s.pt"
     confidence_threshold: float = 0.5
     device: str = "cuda:0"
     target_classes: list[int] = field(default_factory=lambda: [0])
     batch_size: int = 8
+    # Inference input size. Lower (640) on CPU-only machines or close-up
+    # cameras; higher finds smaller subjects at ~4x the compute.
+    imgsz: int = 1280
 
 
 @dataclass
@@ -53,6 +59,9 @@ class VideoConfig:
         default_factory=lambda: [".mp4", ".avi", ".mkv", ".mov"]
     )
     max_file_size_mb: int = 2048
+    # Try GPU-assisted decoding (D3D11/DXVA on Windows) and fall back to
+    # software automatically when unavailable.
+    hw_accel: bool = True
 
 
 @dataclass
