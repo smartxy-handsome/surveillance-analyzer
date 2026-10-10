@@ -48,6 +48,12 @@ class DetectionConfig:
 class AggregationConfig:
     merge_gap_seconds: float = 2.0
     min_segment_seconds: float = 1.0
+    # Recall escape hatch (宁可多截不要漏截): a burst shorter than
+    # min_segment_seconds is still kept when its peak confidence reaches this.
+    # 0.5 = what the pre-tracking configuration accepted; those detections
+    # must never vanish without a capture. Noise blips peak lower and stay
+    # filtered.
+    min_segment_rescue_conf: float = 0.5
     # Group detections by ByteTrack identity instead of frame-level presence:
     # one track = one enter/exit record, so a person briefly lost by the
     # detector mid-walk no longer splits into several sawtooth segments.

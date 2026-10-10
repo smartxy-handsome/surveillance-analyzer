@@ -109,7 +109,12 @@ class TrackAggregator:
             max_confidence=conf_max,
             source_key=key,
         )
-        if seg.duration >= self._config.min_segment_seconds:
+        # Rescue rule: short bursts with a confident peak still produce a
+        # record and captures -- a detection the old threshold accepted must
+        # never disappear for being brief.
+        if seg.duration >= self._config.min_segment_seconds or (
+            seg.max_confidence >= self._config.min_segment_rescue_conf
+        ):
             self._segments.append(seg)
 
     def finalize(self) -> list[TimeSegment]:

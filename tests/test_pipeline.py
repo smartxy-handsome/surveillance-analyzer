@@ -193,7 +193,7 @@ def test_captures_aligned_to_final_segments():
         (False, 0.0),  # 3s
         (False, 0.0),  # 4s
         (False, 0.0),  # 5s  — gap closes A (duration 2.0 >= 1.0: kept)
-        (True, 0.95),  # 6s  — blip B
+        (True, 0.4),   # 6s  — blip B: short AND below the rescue line
         (False, 0.0),  # 7s
         (False, 0.0),  # 8s
         (True, 0.85),  # 9s  — gap 3s closes B (duration 0: filtered); C starts
@@ -325,3 +325,52 @@ def test_legacy_boolean_mode_still_splits_on_gap():
 
     result = coordinator.run(list(range(9)), 1.0)
     assert len(result.segments) == 2
+
+
+def test_short_high_conf_track_still_captures():
+    """End-to-end regression for the audit finding: a person visible for only
+    2 sampled frames (0.64s < min_segment_seconds) with confident detections
+    must produce a segment AND captures, not silently vanish."""
+    plan = [(False, None), (True, 1), (True, 1), (False, None)]
+    call_count = 0
+
+    def mock_detect(frames):
+        nonlocal call_count
+        has_person, track_id = plan[call_count]
+        call_count += 1
+        return [
+            FrameDetection(
+                has_person=has_person,
+                confidence=0.72 if has_person else 0.0,
+                boxes=[(1, 1, 20, 40)] if has_person else [],
+                track_ids=[track_id] if track_id else [],
+            )
+        ]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    dummy_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = lambda index: (True, dummy_frame)
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=3.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=1.0),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    result = coordinator.run(list(range(4)), 3.0)
+
+    assert len(result.segments) == 1
+    assert result.segments[0].duration == pytest.approx(1 / 3)
+    assert result.segments[0].max_confidence == 0.72
+    # And the capture pair exists: appearance + departure on the same track
+    assert len(result.captures) == 1
+    assert len(result.captures[0].candidates) == 2

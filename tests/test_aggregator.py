@@ -49,13 +49,24 @@ def test_no_merge_large_gap():
 
 
 def test_min_segment_filter():
-    # Segment shorter than min_segment_seconds should be discarded
+    # Short AND low-confidence segments are discarded; a confident peak is
+    # rescued (min_segment_rescue_conf) -- 宁可多截不要漏截.
+    config = AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=3.0)
+    agg = SegmentAggregator(config)
+    agg.accumulate(1.0, True, 0.4)
+    agg.accumulate(2.0, True, 0.4)  # segment is 1s long < 3s min, peak < 0.5
+    segments = agg.finalize()
+    assert len(segments) == 0
+
+
+def test_min_segment_rescue_keeps_confident_short_segment():
     config = AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=3.0)
     agg = SegmentAggregator(config)
     agg.accumulate(1.0, True, 0.9)
-    agg.accumulate(2.0, True, 0.9)  # segment is 1s long < 3s min
+    agg.accumulate(2.0, True, 0.9)  # 1s < 3s min, but peak 0.9 >= 0.5
     segments = agg.finalize()
-    assert len(segments) == 0
+    assert len(segments) == 1
+    assert segments[0].max_confidence == 0.9
 
 
 def test_min_segment_keeps_long():

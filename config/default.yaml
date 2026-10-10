@@ -27,6 +27,11 @@ aggregation:
   # segment boundaries follow track lifecycles instead of detection gaps.
   merge_gap_seconds: 2.0
   min_segment_seconds: 1.0
+  # Shorter bursts are still kept when their peak confidence reaches this
+  # (宁可多截不要漏截): a confident detection must never vanish without a
+  # capture just because it was brief. Noise blips peak lower and stay
+  # filtered.
+  min_segment_rescue_conf: 0.5
   # ByteTrack identity grouping: one track = one enter/exit record, so a
   # person briefly lost by the detector mid-walk no longer splits into
   # several sawtooth segments.

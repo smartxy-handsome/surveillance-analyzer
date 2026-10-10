@@ -55,7 +55,9 @@ class SegmentAggregator:
                 max_confidence=self._conf_max,
                 source_key=self._current_key,
             )
-            if seg.duration >= self._config.min_segment_seconds:
+            if seg.duration >= self._config.min_segment_seconds or (
+                seg.max_confidence >= self._config.min_segment_rescue_conf
+            ):
                 self._segments.append(seg)
         self._current_start = None
         self._last_timestamp = None

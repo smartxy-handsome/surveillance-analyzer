@@ -60,9 +60,11 @@ def test_mixed_tracked_and_untracked_keys_stay_unique():
 
 
 def test_short_tracks_dropped_by_min_segment():
-    agg = TrackAggregator(make_config())  # min 1.0s
-    agg.accumulate(0.0, True, 0.9, track_id=1)
-    agg.accumulate(0.33, True, 0.9, track_id=2)
+    """Short AND low-confidence bursts are filtered (noise). Short bursts with
+    a confident peak are rescued instead -- see the rescue tests below."""
+    agg = TrackAggregator(make_config())  # min 1.0s, rescue 0.5
+    agg.accumulate(0.0, True, 0.4, track_id=1)
+    agg.accumulate(0.33, True, 0.4, track_id=2)
     assert agg.finalize() == []
 
 
@@ -76,3 +78,37 @@ def test_non_person_frames_are_ignored():
     segs = agg.finalize()
     assert len(segs) == 1
     assert segs[0].end_time == 4.0
+
+
+def test_short_track_rescued_by_high_confidence():
+    """Audit finding: a 3-detection 0.64s track peaking at conf 0.72 used to
+    vanish without any capture. The rescue rule keeps it."""
+    agg = TrackAggregator(make_config())  # min 1.0s, rescue 0.5
+    for ts in (0.0, 0.33, 0.64):
+        agg.accumulate(ts, True, 0.72, track_id=1)
+    segs = agg.finalize()
+    assert len(segs) == 1
+    assert segs[0].max_confidence == 0.72
+
+
+def test_short_low_conf_track_still_filtered():
+    """Noise blips below the rescue line stay out."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 0.33, 0.64):
+        agg.accumulate(ts, True, 0.45, track_id=1)
+    assert agg.finalize() == []
+
+
+def test_single_frame_at_rescue_threshold_kept():
+    agg = TrackAggregator(make_config())
+    agg.accumulate(0.0, True, 0.61, track_id=1)
+    segs = agg.finalize()
+    assert len(segs) == 1
+
+
+def test_rescue_disabled_when_threshold_above_one():
+    """rescue_conf > 1.0 disables the rule (pure duration filtering)."""
+    agg = TrackAggregator(make_config(min_segment_rescue_conf=1.1))
+    for ts in (0.0, 0.33, 0.64):
+        agg.accumulate(ts, True, 0.9, track_id=1)
+    assert agg.finalize() == []
