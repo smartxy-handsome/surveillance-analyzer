@@ -53,6 +53,7 @@ class SegmentAggregator:
                 detection_count=self._count,
                 avg_confidence=self._conf_sum / self._count if self._count else 0.0,
                 max_confidence=self._conf_max,
+                source_key=self._current_key,
             )
             if seg.duration >= self._config.min_segment_seconds:
                 self._segments.append(seg)

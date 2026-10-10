@@ -153,3 +153,42 @@ def test_device_kept_when_cuda_available(mock_yolo_cls, mock_torch):
     detector = YOLOv8Detector(device="cuda:0")
     detector.load()
     assert detector._device == "cuda:0"
+
+
+def _make_tracked_result(conf: float, track_id: int):
+    result = MagicMock()
+    box = MagicMock()
+    box.cls = [MagicMock(__float__=lambda self: 0.0)]
+    box.conf = [MagicMock(__float__=lambda self: conf)]
+    box.xyxy = [MagicMock(cpu=MagicMock(numpy=MagicMock(return_value=np.array([10, 20, 100, 200]))))]
+    box.id = [MagicMock(__int__=lambda self: track_id)]
+    result.boxes = [box]
+    return result
+
+
+@patch("src.detection.yolo_detector.YOLO")
+def test_track_mode_returns_track_ids(mock_yolo_cls):
+    """track(persist=True) feeds per-box identities into FrameDetection."""
+    mock_model = MagicMock()
+    mock_yolo_cls.return_value = mock_model
+    mock_model.track.return_value = [_make_tracked_result(0.9, 7)]
+
+    detector = YOLOv8Detector(model_name="yolov8s.pt", device="cuda:0", use_tracker=True)
+    detector.load()
+    dets = detector.detect([np.zeros((10, 10, 3), dtype=np.uint8)])
+
+    assert dets[0].has_person is True
+    assert dets[0].track_ids == [7]
+    assert mock_model.track.call_args.kwargs["persist"] is True
+
+
+@patch("src.detection.yolo_detector.YOLO")
+def test_predict_mode_has_no_track_ids(mock_yolo_cls):
+    mock_model = MagicMock()
+    mock_yolo_cls.return_value = mock_model
+    mock_model.predict.return_value = [_make_mock_result(True, 0.9)]
+
+    detector = YOLOv8Detector(model_name="yolov8s.pt", device="cuda:0")
+    detector.load()
+    dets = detector.detect([np.zeros((10, 10, 3), dtype=np.uint8)])
+    assert dets[0].track_ids == []

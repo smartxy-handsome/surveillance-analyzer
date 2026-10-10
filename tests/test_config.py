@@ -7,8 +7,9 @@ from src.core.config import load_config
 def test_load_default_config(tmp_path):
     config = load_config(tmp_path / "nonexistent.yaml")
     assert config.sampling.fps == 3.0
-    assert config.detection.confidence_threshold == 0.5
+    assert config.detection.confidence_threshold == 0.3
     assert config.detection.device == "cuda:0"
+    assert config.aggregation.use_tracking is True
 
 
 def test_load_custom_yaml(tmp_path):

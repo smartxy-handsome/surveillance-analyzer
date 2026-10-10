@@ -10,6 +10,10 @@ class TimeSegment:
     detection_count: int
     avg_confidence: float
     max_confidence: float
+    # Aggregator-internal key identifying the source burst/track; captures
+    # join back to their segment through it. None for legacy-constructed
+    # segments.
+    source_key: int | None = None
 
     @property
     def duration(self) -> float:
@@ -28,7 +32,10 @@ class DetectionConfig:
     # yolov8n@640 on real 720p surveillance footage (small/far persons), and
     # the pipeline stays decode-bound so wall time only grows ~1.5x.
     model_name: str = "yolov8s.pt"
-    confidence_threshold: float = 0.5
+    # Low on purpose: recall first (宁可多截不要漏截). The tracker and the
+    # min-segment filter absorb the extra noise; short spurious bursts are
+    # dropped at aggregation time.
+    confidence_threshold: float = 0.3
     device: str = "cuda:0"
     target_classes: list[int] = field(default_factory=lambda: [0])
     batch_size: int = 8
@@ -41,6 +48,10 @@ class DetectionConfig:
 class AggregationConfig:
     merge_gap_seconds: float = 2.0
     min_segment_seconds: float = 1.0
+    # Group detections by ByteTrack identity instead of frame-level presence:
+    # one track = one enter/exit record, so a person briefly lost by the
+    # detector mid-walk no longer splits into several sawtooth segments.
+    use_tracking: bool = True
 
 
 @dataclass

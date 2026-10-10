@@ -14,15 +14,23 @@ detection:
   # surveillance footage (small/far subjects). Lower imgsz to 640 on
   # CPU-only machines or close-up cameras.
   model_name: "yolov8s.pt"
-  confidence_threshold: 0.5
+  # Low on purpose: recall first (宁可多截,不要漏截). The tracker plus the
+  # min-segment filter absorb the extra noise.
+  confidence_threshold: 0.3
   device: "cuda:0"
   target_classes: [0]
   batch_size: 8
   imgsz: 1280
 
 aggregation:
+  # Only used by the non-tracking fallback path; with use_tracking on,
+  # segment boundaries follow track lifecycles instead of detection gaps.
   merge_gap_seconds: 2.0
   min_segment_seconds: 1.0
+  # ByteTrack identity grouping: one track = one enter/exit record, so a
+  # person briefly lost by the detector mid-walk no longer splits into
+  # several sawtooth segments.
+  use_tracking: true
 
 pipeline:
   frame_queue_size: 64

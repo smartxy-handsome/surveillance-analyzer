@@ -239,3 +239,89 @@ def test_captures_aligned_to_final_segments():
     assert [len(c.candidates) for c in result.captures] == [2, 2]
     assert [c.candidates[0].timestamp for c in result.captures] == [0.0, 9.0]
     assert [c.candidates[-1].timestamp for c in result.captures] == [2.0, 11.0]
+
+
+def test_tracking_merges_dropout_into_one_segment():
+    """Regression for the reported sawtooth: the same person (track 1) is
+    detected 0-2s, lost 3-5s, detected again 6-8s. Tracking must yield ONE
+    enter/exit record with one capture pair -- not two fragments.
+    """
+    plan = [
+        (True, 1), (True, 1), (True, 1),   # 0-2s
+        (False, None), (False, None), (False, None),  # 3-5s dropout
+        (True, 1), (True, 1), (True, 1),   # 6-8s, same track
+    ]
+    call_count = 0
+
+    def mock_detect(frames):
+        nonlocal call_count
+        has_person, track_id = plan[call_count]
+        call_count += 1
+        return [
+            FrameDetection(has_person=has_person, confidence=0.9, boxes=[(1, 1, 2, 2)], track_ids=[track_id] if track_id else [])
+        ]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    dummy_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = lambda index: (True, dummy_frame)
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=1.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=1.0, use_tracking=True),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    result = coordinator.run(list(range(9)), 1.0)
+
+    assert len(result.segments) == 1
+    seg = result.segments[0]
+    assert seg.start_time == 0.0 and seg.end_time == 8.0
+    assert seg.detection_count == 6
+    # One capture pair for the whole presence: appearance at 0s, departure at 8s
+    assert len(result.captures) == 1
+    assert result.captures[0].segment_index == 1
+    assert [c.timestamp for c in result.captures[0].candidates] == [0.0, 8.0]
+
+
+def test_legacy_boolean_mode_still_splits_on_gap():
+    """use_tracking=False keeps the old presence-based behavior: the same
+    detections split into two segments across the 4s gap."""
+    plan = [(True, 1)] * 3 + [(False, None)] * 3 + [(True, 1)] * 3
+    call_count = 0
+
+    def mock_detect(frames):
+        nonlocal call_count
+        has_person, _ = plan[call_count]
+        call_count += 1
+        return [FrameDetection(has_person=has_person, confidence=0.9, boxes=[])]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    dummy_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = lambda index: (True, dummy_frame)
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=1.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=1.0, use_tracking=False),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    result = coordinator.run(list(range(9)), 1.0)
+    assert len(result.segments) == 2

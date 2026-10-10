@@ -16,6 +16,7 @@ from src.core.models import (
 from src.pipeline.capture_collector import SegmentCaptureCollector
 from src.pipeline.frame_queue import FrameQueue
 from src.pipeline.segment_aggregator import SegmentAggregator
+from src.pipeline.track_aggregator import TrackAggregator
 
 
 class PipelineCoordinator:
@@ -48,7 +49,13 @@ class PipelineCoordinator:
 
         self._detector.load()
         queue = FrameQueue(maxsize=self._pipeline.frame_queue_size)
-        aggregator = SegmentAggregator(self._aggregation)
+        # Tracking mode: segments follow ByteTrack identities (one track = one
+        # enter/exit); detections without an id fall back to presence-based
+        # grouping inside TrackAggregator. Legacy boolean mode otherwise.
+        if self._aggregation.use_tracking:
+            aggregator = TrackAggregator(self._aggregation)
+        else:
+            aggregator = SegmentAggregator(self._aggregation)
         collector = SegmentCaptureCollector()
         stop_event = threading.Event()
         total = len(frame_indices)
@@ -97,19 +104,26 @@ class PipelineCoordinator:
                 images = [f.image for f in batch]
                 results = self._detector.detect(images)
                 for frame_data, det in zip(batch, results):
-                    segment_key = aggregator.accumulate(
-                        frame_data.timestamp, det.has_person, det.confidence
-                    )
-                    # Collect candidate frames for capture
-                    if det.has_person and segment_key is not None:
-                        collector.add_candidate(
-                            segment_key=segment_key,
-                            frame_index=frame_data.index,
-                            timestamp=frame_data.timestamp,
-                            confidence=det.confidence,
-                            image=frame_data.image,
-                            boxes=det.boxes,
-                        )
+                    # With tracking on, each tracked box joins its own
+                    # segment; untracked detections share one fallback key.
+                    if det.has_person and det.track_ids:
+                        keys = {
+                            aggregator.accumulate(frame_data.timestamp, True, det.confidence, tid)
+                            for tid in det.track_ids
+                        }
+                    else:
+                        keys = {aggregator.accumulate(frame_data.timestamp, det.has_person, det.confidence)}
+                    for segment_key in keys:
+                        # Collect candidate frames for capture
+                        if det.has_person and segment_key is not None:
+                            collector.add_candidate(
+                                segment_key=segment_key,
+                                frame_index=frame_data.index,
+                                timestamp=frame_data.timestamp,
+                                confidence=det.confidence,
+                                image=frame_data.image,
+                                boxes=det.boxes,
+                            )
                 processed += len(batch)
                 if progress_callback:
                     progress_callback(processed, total)
@@ -155,26 +169,28 @@ class PipelineCoordinator:
     ) -> list[SegmentCaptureData]:
         """Keep captures only for bursts that survived aggregation, renumbered.
 
-        The collector keys candidates by the aggregator's transient burst key,
-        but ``finalize`` drops bursts shorter than ``min_segment_seconds``.
-        Without alignment the gallery would show a group for every transient
-        detection and its numbering would not match the segment table. Each
-        final segment corresponds to exactly one surviving burst, so a burst
-        is kept when its time span falls inside a final segment and its
-        ``segment_index`` becomes that segment's 1-based ordinal.
+        The collector keys candidates by the aggregator's transient burst/track
+        key, and finalize() drops bursts shorter than ``min_segment_seconds``;
+        each surviving TimeSegment carries that key in ``source_key``, so the
+        join is exact. Captures whose key did not survive belong to a dropped
+        burst and are dropped with it — never re-assigned by time overlap,
+        which would misattribute them in overlapping (multi-person) segments.
         """
-        epsilon = 1e-6
+        key_to_ordinal = {
+            seg.source_key: ordinal
+            for ordinal, seg in enumerate(segments, start=1)
+            if seg.source_key is not None
+        }
         aligned = []
         for cap in captures:
-            for ordinal, seg in enumerate(segments, start=1):
-                if seg.start_time - epsilon <= cap.start_time and cap.end_time <= seg.end_time + epsilon:
-                    aligned.append(
-                        SegmentCaptureData(
-                            segment_index=ordinal,
-                            start_time=cap.start_time,
-                            end_time=cap.end_time,
-                            candidates=cap.candidates,
-                        )
+            ordinal = key_to_ordinal.get(cap.segment_index)
+            if ordinal is not None:
+                aligned.append(
+                    SegmentCaptureData(
+                        segment_index=ordinal,
+                        start_time=cap.start_time,
+                        end_time=cap.end_time,
+                        candidates=cap.candidates,
                     )
-                    break  # a capture group belongs to at most one segment
+                )
         return aligned

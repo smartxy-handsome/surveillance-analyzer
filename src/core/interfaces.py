@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -19,6 +19,9 @@ class FrameDetection:
     has_person: bool
     confidence: float
     boxes: list[tuple[int, int, int, int]]  # (x1, y1, x2, y2)
+    # Per-box tracker identity from ByteTrack, parallel to `boxes`. Empty when
+    # the detector runs without tracking (legacy boolean aggregation path).
+    track_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

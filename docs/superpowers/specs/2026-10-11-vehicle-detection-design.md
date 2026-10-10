@@ -105,6 +105,10 @@ captures:        + kind TEXT ('appearance' | 'departure' | 'plate';旧数据回�
 
 ## 实施阶段(后续编程的任务分解)
 
+> **进度注记(2026-10-11)**:阶段 B 的跟踪基础已提前为**人体路径**落地
+> (`TrackAggregator` + ByteTrack,`aggregation.use_tracking`),车辆路径将
+> 复用同一套机制并扩展 per-class 消费。
+
 1. **阶段 A:目标选择管道**(先打通最小闭环)
    - jobs 表 `detection_target` 列 + 迁移;API 字段;config 校验;detector 按 job 传类;人体路径回归测试
 2. **阶段 B:track 模式**

@@ -300,6 +300,7 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                     confidence_threshold=config.detection.confidence_threshold,
                     batch_size=config.detection.batch_size,
                     imgsz=config.detection.imgsz,
+                    use_tracker=config.aggregation.use_tracking,
                 )
 
             detector = detector_factory()
