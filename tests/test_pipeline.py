@@ -374,3 +374,53 @@ def test_short_high_conf_track_still_captures():
     # And the capture pair exists: appearance + departure on the same track
     assert len(result.captures) == 1
     assert len(result.captures[0].candidates) == 2
+
+
+def test_id_switch_captures_fold_into_one_group():
+    """A re-ID'd person yields ONE record and ONE capture pair (earliest +
+    latest), not four captures across two groups."""
+    # track 1 at frames 0-2 (t=0..0.66s), track 2 same body frames 3-5
+    plan = [(1, 0.0), (1, 0.33), (1, 0.66), (2, 1.0), (2, 1.33), (2, 1.66)]
+    call_count = 0
+
+    def mock_detect(frames):
+        nonlocal call_count
+        track_id, _ = plan[call_count]
+        call_count += 1
+        return [
+            FrameDetection(
+                has_person=True,
+                confidence=0.9,
+                boxes=[(100, 100, 140, 220)],
+                track_ids=[track_id],
+            )
+        ]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    dummy_frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = lambda index: (True, dummy_frame)
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=3.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(
+            merge_gap_seconds=2.0, min_segment_seconds=0.5, record_merge_iou=0.5
+        ),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+    )
+
+    result = coordinator.run(list(range(6)), 3.0)
+
+    assert len(result.segments) == 1
+    assert result.segments[0].detection_count == 6
+    assert len(result.captures) == 1
+    caps = result.captures[0].candidates
+    assert [c.timestamp for c in caps] == [0.0, pytest.approx(5 / 3)]

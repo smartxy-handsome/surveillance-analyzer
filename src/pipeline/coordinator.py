@@ -107,8 +107,15 @@ class PipelineCoordinator:
                     # With tracking on, each tracked box joins its own
                     # segment; untracked detections share one fallback key.
                     if det.has_person and det.track_ids:
+                        box_by_id = dict(zip(det.track_ids, det.boxes))
                         keys = {
-                            aggregator.accumulate(frame_data.timestamp, True, det.confidence, tid)
+                            aggregator.accumulate(
+                                frame_data.timestamp,
+                                True,
+                                det.confidence,
+                                tid,
+                                box=box_by_id.get(tid),
+                            )
                             for tid in det.track_ids
                         }
                     else:
@@ -158,10 +165,43 @@ class PipelineCoordinator:
             self._detector.unload()
 
         segments = aggregator.finalize()
-        captures = self._align_captures_to_segments(collector.get_all_captures(), segments)
+        captures = collector.get_all_captures()
+        if isinstance(aggregator, TrackAggregator) and aggregator.key_map:
+            captures = self._merge_capture_groups(captures, aggregator.key_map)
+        captures = self._align_captures_to_segments(captures, segments)
         return PipelineResult(
             segments=segments, captures=captures, dropped_frames=dropped_frames
         )
+
+    @staticmethod
+    def _merge_capture_groups(captures, key_map: dict[int, int]):
+        """Fold capture groups whose keys an ID-switch merge absorbed.
+
+        A merged record keeps its appearance (earliest) and departure
+        (latest) captures; the intermediate switch-moment captures of the
+        absorbed fragment are dropped.
+        """
+        grouped: dict[int, SegmentCaptureData] = {}
+        for cap in captures:
+            final_key = key_map.get(cap.segment_index, cap.segment_index)
+            if final_key in grouped:
+                grouped[final_key].candidates.extend(cap.candidates)
+            else:
+                grouped[final_key] = SegmentCaptureData(
+                    segment_index=final_key,
+                    start_time=cap.start_time,
+                    end_time=cap.end_time,
+                    candidates=list(cap.candidates),
+                )
+        merged = []
+        for cap in grouped.values():
+            cap.candidates.sort(key=lambda c: c.timestamp)
+            if len(cap.candidates) > 2:
+                cap.candidates = [cap.candidates[0], cap.candidates[-1]]
+            cap.start_time = cap.candidates[0].timestamp
+            cap.end_time = cap.candidates[-1].timestamp
+            merged.append(cap)
+        return merged
 
     @staticmethod
     def _align_captures_to_segments(

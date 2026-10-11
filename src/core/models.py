@@ -28,10 +28,11 @@ class SamplingConfig:
 
 @dataclass
 class DetectionConfig:
-    # yolov8s + imgsz 1280 measured 2.3x more person detections than
-    # yolov8n@640 on real 720p surveillance footage (small/far persons), and
-    # the pipeline stays decode-bound so wall time only grows ~1.5x.
-    model_name: str = "yolov8s.pt"
+    # yolov8m@1280 on real night surveillance footage: 2.5x more confirmed
+    # (peak conf >= 0.5) records and 40% fewer suspected ones than yolov8s,
+    # at ~1.2x wall time (inference 54fps, still decode-adjacent). yolov8s@640
+    # found 2.3x more than yolov8n@640 — upgrade when GPU headroom allows.
+    model_name: str = "yolov8m.pt"
     # Low on purpose: recall first (宁可多截不要漏截). The tracker and the
     # min-segment filter absorb the extra noise; short spurious bursts are
     # dropped at aggregation time.
@@ -58,6 +59,12 @@ class AggregationConfig:
     # one track = one enter/exit record, so a person briefly lost by the
     # detector mid-walk no longer splits into several sawtooth segments.
     use_tracking: bool = True
+    # ID-switch dedup: the tracker occasionally re-IDs the same person,
+    # producing overlapping records for one body. Records whose time spans
+    # touch within this gap AND whose boundary boxes coincide (IoU below)
+    # are merged into one record. IoU 0 disables merging.
+    record_merge_gap_seconds: float = 2.0
+    record_merge_iou: float = 0.5
 
 
 @dataclass

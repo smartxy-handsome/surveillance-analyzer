@@ -112,3 +112,84 @@ def test_rescue_disabled_when_threshold_above_one():
     for ts in (0.0, 0.33, 0.64):
         agg.accumulate(ts, True, 0.9, track_id=1)
     assert agg.finalize() == []
+
+
+# --- ID-switch record merging -------------------------------------------
+
+BOX_A = (100, 100, 140, 220)  # same body under two IDs
+BOX_FAR = (900, 100, 940, 220)  # a different body elsewhere in frame
+
+
+def test_overlapping_tracks_same_body_merge():
+    """Tracker re-IDs a standing person: two overlapping records with
+    coincident boxes collapse into one, and key_map reports the absorption."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0, 2.0, 3.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (3.3, 4.0, 5.0):
+        agg.accumulate(ts, True, 0.9, track_id=2, box=BOX_A)
+    segs = agg.finalize()
+    assert len(segs) == 1
+    assert segs[0].start_time == 0.0 and segs[0].end_time == 5.0
+    assert segs[0].detection_count == 7
+    assert agg.key_map == {2: 1}
+
+
+def test_overlapping_tracks_different_bodies_not_merged():
+    """Two real people co-present far apart must stay separate records."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0, 2.0, 3.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (3.3, 4.0, 5.0):
+        agg.accumulate(ts, True, 0.9, track_id=2, box=BOX_FAR)
+    segs = agg.finalize()
+    assert len(segs) == 2
+    assert agg.key_map == {}
+
+
+def test_sequential_tracks_same_spot_small_gap_merge():
+    """Track dies and a new one is born at the same position within the gap:
+    leave-and-return under a fresh ID is one presence."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0, 2.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (3.3, 4.3):
+        agg.accumulate(ts, True, 0.8, track_id=2, box=BOX_A)  # 1.3s gap
+    segs = agg.finalize()
+    assert len(segs) == 1
+    assert segs[0].end_time == 4.3
+
+
+def test_sequential_tracks_gap_too_long_not_merged():
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0, 2.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (6.0, 7.0):
+        agg.accumulate(ts, True, 0.8, track_id=2, box=BOX_A)  # 4s gap > 2s
+    segs = agg.finalize()
+    assert len(segs) == 2
+
+
+def test_merge_disabled_at_zero_iou():
+    agg = TrackAggregator(make_config(record_merge_iou=0.0))
+    for ts in (0.0, 1.0, 2.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (3.3, 4.0, 5.0):
+        agg.accumulate(ts, True, 0.9, track_id=2, box=BOX_A)
+    assert len(agg.finalize()) == 2
+
+
+def test_chained_id_switches_collapse_onto_first():
+    """A->B->C on the same body: all three become one record keyed by A."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0):
+        agg.accumulate(ts, True, 0.8, track_id=1, box=BOX_A)
+    for ts in (2.0, 3.0):
+        agg.accumulate(ts, True, 0.8, track_id=2, box=BOX_A)
+    for ts in (4.0, 5.0):
+        agg.accumulate(ts, True, 0.8, track_id=3, box=BOX_A)
+    segs = agg.finalize()
+    assert len(segs) == 1
+    assert segs[0].source_key == 1
+    assert segs[0].detection_count == 6
+    assert agg.key_map == {2: 1, 3: 1}

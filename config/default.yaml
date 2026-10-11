@@ -10,10 +10,10 @@ sampling:
   strategy: "uniform"
 
 detection:
-  # yolov8s@1280 found 2.3x more persons than yolov8n@640 on real 720p
-  # surveillance footage (small/far subjects). Lower imgsz to 640 on
-  # CPU-only machines or close-up cameras.
-  model_name: "yolov8s.pt"
+  # yolov8m@1280 on real night footage: 2.5x more confirmed records and 40%
+  # fewer suspected ones vs yolov8s@1280, at ~1.2x wall time. Drop to
+  # yolov8s/yolov8n or lower imgsz on CPU-only machines or close-up cameras.
+  model_name: "yolov8m.pt"
   # Low on purpose: recall first (宁可多截,不要漏截). The tracker plus the
   # min-segment filter absorb the extra noise.
   confidence_threshold: 0.3
@@ -36,6 +36,12 @@ aggregation:
   # person briefly lost by the detector mid-walk no longer splits into
   # several sawtooth segments.
   use_tracking: true
+  # ID-switch dedup: the tracker occasionally re-IDs the same person,
+  # producing overlapping records for one body. Records whose time spans
+  # touch within record_merge_gap_seconds AND whose boundary boxes coincide
+  # (IoU >= record_merge_iou) merge into one record. IoU 0 disables.
+  record_merge_gap_seconds: 2.0
+  record_merge_iou: 0.5
 
 pipeline:
   frame_queue_size: 64
