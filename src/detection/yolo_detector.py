@@ -64,6 +64,7 @@ class YOLOv8Detector(DetectionEngine):
             best_conf = 0.0
             boxes_list = []
             track_ids = []
+            class_ids = []
             for box in result.boxes:
                 conf = float(box.conf[0])
                 if conf < self._confidence_threshold:
@@ -73,6 +74,8 @@ class YOLOv8Detector(DetectionEngine):
                 boxes_list.append(tuple(xyxy))
                 if self._use_tracker and box.id is not None:
                     track_ids.append(int(box.id[0]))
+                if getattr(box, "cls", None) is not None:
+                    class_ids.append(int(box.cls[0]))
 
             if boxes_list:
                 detections.append(
@@ -81,6 +84,7 @@ class YOLOv8Detector(DetectionEngine):
                         confidence=best_conf,
                         boxes=boxes_list,
                         track_ids=track_ids,
+                        class_ids=class_ids,
                     )
                 )
             else:

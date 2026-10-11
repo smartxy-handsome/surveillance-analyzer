@@ -75,6 +75,7 @@ def create_jobs_router() -> APIRouter:
                 id=job_id,
                 filename=file_path.name,
                 file_path=str(file_path.resolve()),
+                detection_target=body.detection_target,
                 sampling_fps=config.sampling.fps,
                 model_name=config.detection.model_name,
                 confidence_threshold=config.detection.confidence_threshold,
@@ -93,6 +94,7 @@ def create_jobs_router() -> APIRouter:
             filename=job.filename,
             status=job.status,
             created_at=job.created_at or utcnow(),
+            detection_target=job.detection_target,
         )
 
     @router.get("/jobs", response_model=list[JobResponse])
@@ -106,6 +108,7 @@ def create_jobs_router() -> APIRouter:
                 filename=j.filename,
                 status=j.status,
                 created_at=j.created_at or utcnow(),
+                detection_target=j.detection_target or "person",
                 total_segments=j.total_segments or 0,
                 total_person_time=j.total_person_time or 0.0,
                 processing_time_seconds=j.processing_time_seconds,
@@ -137,6 +140,7 @@ def create_jobs_router() -> APIRouter:
             filename=job.filename,
             status=job.status,
             created_at=job.created_at or utcnow(),
+            detection_target=job.detection_target or "person",
             total_segments=job.total_segments or 0,
             total_person_time=job.total_person_time or 0.0,
             processing_time_seconds=job.processing_time_seconds,
@@ -168,6 +172,7 @@ def create_jobs_router() -> APIRouter:
             raise HTTPException(409, "Job is currently processing; wait for it to finish")
         await capture_repo.delete_by_job(job_id)
         await segment_repo.delete_by_job(job_id)
+        await request.app.state.vehicle_event_repo.delete_by_job(job_id)
         await job_repo.delete(job_id)
         _remove_capture_dir(job_id)
 
@@ -261,7 +266,11 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
 
         from src.pipeline.capture_saver import CaptureSaver, get_capture_output_dir
         from src.pipeline.coordinator import PipelineCoordinator
-        from src.storage.repository import CaptureCreate, SegmentCreate
+        from src.storage.repository import (
+            CaptureCreate,
+            SegmentCreate,
+            VehicleEventCreate,
+        )
         from src.video.reader import OpenCVFrameReader
         from src.video.sampler import compute_frame_indices
 
@@ -290,13 +299,18 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
 
             frame_indices = compute_frame_indices(meta.fps, config.sampling.fps, meta.total_frames)
 
+            from src.core.models import DETECTION_TARGET_CLASSES
+
+            detection_target = job.detection_target or "person"
+            target_classes = DETECTION_TARGET_CLASSES.get(detection_target, [0])
+
             if detector_factory is None:
                 from src.detection.yolo_detector import YOLOv8Detector
 
                 detector_factory = lambda: YOLOv8Detector(  # noqa: E731
                     model_name=config.detection.model_name,
                     device=config.detection.device,
-                    target_classes=config.detection.target_classes,
+                    target_classes=target_classes,
                     confidence_threshold=config.detection.confidence_threshold,
                     batch_size=config.detection.batch_size,
                     imgsz=config.detection.imgsz,
@@ -313,6 +327,7 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                 detection_config=config.detection,
                 aggregation_config=config.aggregation,
                 pipeline_config=config.pipeline,
+                detection_target=detection_target,
             )
 
             t0 = time_mod.monotonic()
@@ -377,6 +392,50 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                     )
 
             total_person_time = sum(s.duration for s in segments)
+
+            # Vehicle path: save the three captures per event (appearance,
+            # departure, plate) and the plate readout into vehicle_events.
+            if result.vehicle_events:
+                vehicle_event_repo = app.state.vehicle_event_repo
+                output_dir = get_capture_output_dir(job.file_path, job_id)
+                saver = CaptureSaver(output_dir)
+                # Injection point for tests; production falls back to the
+                # best-effort HyperLPR3 recognizer.
+                recognizer_factory = getattr(app.state, "plate_recognizer_factory", None)
+                recognizer = recognizer_factory() if recognizer_factory else _make_plate_recognizer()
+                for event in result.vehicle_events:
+                    cap_results, plate = saver.save_vehicle_event(event, recognizer)
+                    if cap_results:
+                        await capture_repo.bulk_create(
+                            job_id,
+                            [
+                                CaptureCreate(
+                                    segment_index=r.segment_index,
+                                    timestamp=r.timestamp,
+                                    confidence=r.confidence,
+                                    crop_path=r.crop_path,
+                                    annotated_path=r.annotated_path,
+                                    kind=r.kind,
+                                )
+                                for r in cap_results
+                            ],
+                        )
+                    await vehicle_event_repo.bulk_create(
+                        job_id,
+                        [
+                            VehicleEventCreate(
+                                enter_time=event.enter_time,
+                                exit_time=event.exit_time,
+                                detection_count=event.detection_count,
+                                avg_confidence=event.avg_confidence,
+                                max_confidence=event.max_confidence,
+                                plate_number=plate.number if plate else None,
+                                plate_confidence=plate.confidence if plate else None,
+                                plate_type=plate.plate_type if plate else None,
+                            )
+                        ],
+                    )
+
             await job_repo.update_summary(
                 job_id, len(segments), total_person_time, elapsed, result.dropped_frames
             )
@@ -385,3 +444,15 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
             await job_repo.update_status(job_id, "failed", str(e))
         finally:
             app.state.job_progress.pop(job_id, None)
+
+
+def _make_plate_recognizer():
+    """Best-effort recognizer: unavailable backend leaves plate fields empty
+    instead of failing the analysis."""
+    try:
+        from src.detection.plate_recognizer import PlateRecognizer
+
+        return PlateRecognizer()
+    except Exception as e:
+        print(f"warning: plate recognizer unavailable ({e}); plate fields left empty")
+        return None

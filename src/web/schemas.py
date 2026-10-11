@@ -1,10 +1,21 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from src.core.models import DETECTION_TARGET_CLASSES
 
 
 class JobCreateRequest(BaseModel):
     file_path: str
+    detection_target: str = "person"
+
+    @field_validator("detection_target")
+    @classmethod
+    def _validate_target(cls, v: str) -> str:
+        if v not in DETECTION_TARGET_CLASSES:
+            allowed = ", ".join(sorted(DETECTION_TARGET_CLASSES))
+            raise ValueError(f"detection_target must be one of: {allowed}")
+        return v
 
 
 class VideoMetadataResponse(BaseModel):
@@ -26,6 +37,7 @@ class JobResponse(BaseModel):
     filename: str
     status: str
     created_at: datetime
+    detection_target: str = "person"
     video_metadata: VideoMetadataResponse | None = None
     total_segments: int = 0
     total_person_time: float = 0.0
@@ -60,4 +72,23 @@ class CaptureResponse(BaseModel):
     timestamp_formatted: str
     confidence: float
     crop_url: str
-    annotated_url: str
+    annotated_url: str | None = None
+    kind: str = "appearance"
+
+
+class VehicleEventResponse(BaseModel):
+    id: int
+    enter_time: float
+    exit_time: float
+    enter_time_formatted: str
+    exit_time_formatted: str
+    duration_seconds: float
+    detection_count: int
+    avg_confidence: float
+    max_confidence: float
+    plate_number: str | None = None
+    plate_confidence: float | None = None
+    plate_type: str | None = None
+    enter_capture: CaptureResponse | None = None
+    exit_capture: CaptureResponse | None = None
+    plate_capture: CaptureResponse | None = None

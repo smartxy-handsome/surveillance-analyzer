@@ -34,7 +34,12 @@ from src.core.models import (
 )
 from src.pipeline.coordinator import PipelineCoordinator
 from src.storage.database import Base
-from src.storage.repository import CaptureRepository, JobRepository, SegmentRepository
+from src.storage.repository import (
+    CaptureRepository,
+    JobRepository,
+    SegmentRepository,
+    VehicleEventRepository,
+)
 from src.video.reader import OpenCVFrameReader
 from src.video.sampler import compute_frame_indices
 from src.web.app import create_app
@@ -154,6 +159,7 @@ async def e2e_client(tmp_path):
     app.state.job_repo = JobRepository(session_factory)
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
+    app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
     app.state.session_factory = session_factory
     import asyncio
 
@@ -286,3 +292,97 @@ def test_pipeline_real_video_first_seconds(real_video_meta):
     for seg, cap in zip(result.segments, result.captures):
         assert seg.start_time <= cap.candidates[0].timestamp
         assert cap.candidates[-1].timestamp <= seg.end_time
+
+
+# ---------------------------------------------------------------------------
+# Vehicle-path E2E: a synthetic "car" (large bright rectangle on a dark
+# background) detected by a class-2 scripted detector, driven through the
+# real _run_analysis with plate recognition stubbed to a fake.
+# ---------------------------------------------------------------------------
+
+
+class BrightVehicleDetector(DetectionEngine):
+    """Fake vehicle detector: bright frame = a car with a fixed box."""
+
+    def load(self) -> None:
+        pass
+
+    def unload(self) -> None:
+        pass
+
+    def detect(self, frames):
+        return [
+            FrameDetection(
+                has_person=float(f.mean()) > 127.0,
+                confidence=0.92,
+                boxes=[(20, 40, 100, 100)],
+                track_ids=[77] if float(f.mean()) > 127.0 else [],
+                class_ids=[2] if float(f.mean()) > 127.0 else [],
+            )
+            for f in frames
+        ]
+
+
+class FakePlateRecognizer:
+    """Deterministic stand-in for HyperLPR3."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def recognize(self, vehicle_crop):
+        self.calls += 1
+        from src.core.models import PlateResult
+
+        return PlateResult(number="京A88888", confidence=0.95, plate_type="blue", plate_box=None)
+
+
+@pytest.mark.asyncio
+async def test_api_end_to_end_vehicle_video(e2e_client, tmp_path):
+    video = tmp_path / "vehicle.avi"
+    # bright frames 10..19 -> one vehicle present 1.0s-1.9s
+    write_synthetic_video(video, person_first=10, person_last=19)
+
+    e2e_client.test_app.state.detector_factory = BrightVehicleDetector
+    e2e_client.test_app.state.plate_recognizer_factory = FakePlateRecognizer
+
+    resp = await e2e_client.post(
+        "/api/jobs", json={"file_path": str(video), "detection_target": "vehicle"}
+    )
+    assert resp.status_code == 201
+    job_id = resp.json()["id"]
+    assert resp.json()["detection_target"] == "vehicle"
+
+    capture_dir = DATA_DIR / "captures" / job_id
+    try:
+        resp = await e2e_client.get(f"/api/jobs/{job_id}")
+        job = resp.json()
+        assert job["status"] == "completed", job
+
+        resp = await e2e_client.get(f"/api/jobs/{job_id}/vehicle-events")
+        events = resp.json()
+        assert len(events) == 1
+        ev = events[0]
+        # 3fps sampling of the 10fps clip: bright frames 10..19 are seen
+        # only at sampled frames 12,15,18 -> t 1.2..1.8
+        assert ev["enter_time"] == pytest.approx(1.2)
+        assert ev["exit_time"] == pytest.approx(1.8)
+        assert ev["plate_number"] == "京A88888"
+        assert ev["plate_type"] == "blue"
+        assert ev["enter_capture"]["kind"] == "appearance"
+        assert ev["exit_capture"]["kind"] == "departure"
+        assert ev["plate_capture"]["kind"] == "plate"
+
+        # All three images exist on disk and are servable
+        for slot in ("enter_capture", "exit_capture", "plate_capture"):
+            url = ev[slot]["crop_url"]
+            img = await e2e_client.get(url)
+            assert img.status_code == 200
+            assert img.headers["content-type"].startswith("image/")
+
+        # No person results in vehicle-only mode
+        resp = await e2e_client.get(f"/api/jobs/{job_id}/segments")
+        assert resp.json() == []
+    finally:
+        resp = await e2e_client.delete(f"/api/jobs/{job_id}")
+        assert resp.status_code == 204
+        assert not capture_dir.exists()

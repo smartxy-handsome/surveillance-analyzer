@@ -17,6 +17,7 @@ class JobModel(Base):
     file_path = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pending")
     error_message = Column(Text, nullable=True)
+    detection_target = Column(String, nullable=False, default="person")
 
     duration_seconds = Column(Float, nullable=True)
     video_fps = Column(Float, nullable=True)
@@ -64,6 +65,24 @@ class CaptureModel(Base):
     confidence = Column(Float, nullable=False)
     crop_path = Column(String, nullable=False)
     annotated_path = Column(String, nullable=False)
+    kind = Column(String, nullable=False, default="appearance")
+    created_at = Column(DateTime, default=utcnow)
+
+
+class VehicleEventModel(Base):
+    __tablename__ = "vehicle_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String, nullable=False, index=True)
+    enter_time = Column(Float, nullable=False)
+    exit_time = Column(Float, nullable=False)
+    duration = Column(Float, nullable=False)
+    detection_count = Column(Integer, nullable=False)
+    avg_confidence = Column(Float, nullable=False)
+    max_confidence = Column(Float, nullable=False)
+    plate_number = Column(String, nullable=True)
+    plate_confidence = Column(Float, nullable=True)
+    plate_type = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -74,7 +93,11 @@ async def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:
         await conn.run_sync(Base.metadata.create_all)
         # create_all does not add columns to existing tables; add ones introduced
         # after the first release so old databases keep working in place.
-        for table, column in [("jobs", Column("dropped_frames", Integer, nullable=True))]:
+        for table, column in [
+            ("jobs", Column("dropped_frames", Integer, nullable=True)),
+            ("jobs", Column("detection_target", String, nullable=False, default="person")),
+            ("captures", Column("kind", String, nullable=False, default="appearance")),
+        ]:
             await conn.run_sync(
                 lambda sync_conn, t=table, c=column: _add_column_if_missing(sync_conn, t, c)
             )
@@ -89,6 +112,14 @@ def _add_column_if_missing(sync_conn, table: str, column: Column) -> None:
     # turning a restart into a spurious "duplicate column name" crash.
     rows = sync_conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
     existing = {row[1] for row in rows}
-    if column.name not in existing:
-        col_type = column.type.compile(sync_conn.engine.dialect)
-        sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column.name} {col_type}"))
+    if column.name in existing:
+        return
+    col_type = column.type.compile(sync_conn.engine.dialect)
+    ddl = f"ALTER TABLE {table} ADD COLUMN {column.name} {col_type}"
+    # SQLite refuses NOT NULL additions without a default on non-empty tables.
+    if column.nullable is False:
+        ddl += " NOT NULL"
+    if column.default is not None and hasattr(column.default, "arg"):
+        arg = column.default.arg
+        ddl += f" DEFAULT '{arg}'" if isinstance(arg, str) else f" DEFAULT {arg}"
+    sync_conn.execute(text(ddl))

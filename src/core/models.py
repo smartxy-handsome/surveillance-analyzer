@@ -115,6 +115,17 @@ class AppConfig:
     web: WebConfig = field(default_factory=WebConfig)
 
 
+# Analysis target -> COCO class filter fed to the detector.
+# Vehicles = four-wheeled and above (car 2 / bus 5 / truck 7); motorcycles
+# and bicycles are deliberately excluded (rider unobstructed -> person
+# detection covers them).
+DETECTION_TARGET_CLASSES: dict[str, list[int]] = {
+    "person": [0],
+    "vehicle": [2, 5, 7],
+    "both": [0, 2, 5, 7],
+}
+
+
 @dataclass
 class CaptureCandidate:
     """A candidate frame for capture, with detection metadata."""
@@ -128,20 +139,61 @@ class CaptureCandidate:
 @dataclass
 class SegmentCaptureData:
     """Capture candidates for a single time segment."""
+
     segment_index: int
     start_time: float
     end_time: float
     candidates: list[CaptureCandidate]
+    # Largest-box-area frame for the segment -- the plate close-up source on
+    # the vehicle path; None on the person path.
+    plate_candidate: CaptureCandidate | None = None
+
+
+@dataclass
+class VehicleEventData:
+    """One vehicle's enter/exit record with its capture candidates.
+
+    Assembled by the coordinator from the vehicle-class track; the plate
+    candidate is the frame where the vehicle box was largest (closest to
+    the camera, most plate pixels).
+    """
+
+    ordinal: int
+    enter_time: float
+    exit_time: float
+    detection_count: int
+    avg_confidence: float
+    max_confidence: float
+    enter_candidate: CaptureCandidate | None = None
+    exit_candidate: CaptureCandidate | None = None
+    plate_candidate: CaptureCandidate | None = None
+
+    @property
+    def duration(self) -> float:
+        return self.exit_time - self.enter_time
+
+
+@dataclass
+class PlateResult:
+    """License plate readout; number is None when recognition failed
+    (留空 + 置信度, never a placeholder string)."""
+
+    number: str | None
+    confidence: float
+    plate_type: str | None = None
+    plate_box: tuple[int, int, int, int] | None = None
 
 
 @dataclass
 class CaptureResult:
     """Result of saving a capture to disk."""
+
     segment_index: int
     timestamp: float
     confidence: float
     crop_path: str
     annotated_path: str
+    kind: str = "appearance"  # appearance | departure | plate
 
 
 @dataclass
@@ -151,3 +203,4 @@ class PipelineResult:
     segments: list[TimeSegment]
     captures: list[SegmentCaptureData]
     dropped_frames: int = 0
+    vehicle_events: list["VehicleEventData"] = field(default_factory=list)

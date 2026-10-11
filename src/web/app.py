@@ -10,7 +10,12 @@ from starlette.responses import FileResponse
 from src.core.config import load_config
 from src.core.models import AppConfig, WebConfig
 from src.storage.database import init_db
-from src.storage.repository import CaptureRepository, JobRepository, SegmentRepository
+from src.storage.repository import (
+    CaptureRepository,
+    JobRepository,
+    SegmentRepository,
+    VehicleEventRepository,
+)
 from src.web.routes.jobs import create_jobs_router
 from src.web.routes.results import create_results_router
 
@@ -27,10 +32,12 @@ async def lifespan(app: FastAPI):
     job_repo = JobRepository(session_factory)
     segment_repo = SegmentRepository(session_factory)
     capture_repo = CaptureRepository(session_factory)
+    vehicle_event_repo = VehicleEventRepository(session_factory)
 
     app.state.job_repo = job_repo
     app.state.segment_repo = segment_repo
     app.state.capture_repo = capture_repo
+    app.state.vehicle_event_repo = vehicle_event_repo
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
     # Ephemeral per-job analysis progress (job_id -> {processed, total, percent});

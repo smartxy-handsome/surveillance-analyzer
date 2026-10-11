@@ -43,9 +43,15 @@ class SegmentCaptureCollector:
             image=image.copy(),  # Store a copy to avoid reference issues
             boxes=boxes,
         )
+        area = _max_box_area(boxes)
 
         if segment_key not in self._segments:
-            self._segments[segment_key] = {"first": candidate, "last": candidate}
+            self._segments[segment_key] = {
+                "first": candidate,
+                "last": candidate,
+                "best": candidate,
+                "best_area": area,
+            }
             self._segment_times[segment_key] = (timestamp, timestamp)
             return
 
@@ -60,6 +66,11 @@ class SegmentCaptureCollector:
             pair["first"] = candidate
         if timestamp >= pair["last"].timestamp:
             pair["last"] = candidate
+        # Plate close-up source: the frame where the target box was largest
+        # (closest to the camera -> most plate/detail pixels).
+        if area > pair["best_area"]:
+            pair["best"] = candidate
+            pair["best_area"] = area
 
     def get_all_captures(self) -> list[SegmentCaptureData]:
         """Return all collected captures, one SegmentCaptureData per segment.
@@ -82,8 +93,13 @@ class SegmentCaptureCollector:
                     start_time=start_time,
                     end_time=end_time,
                     candidates=candidates,
+                    plate_candidate=pair["best"],
                 )
             )
         # Sort by segment_index for consistent output
         result.sort(key=lambda x: x.segment_index)
         return result
+
+
+def _max_box_area(boxes: list[tuple[int, int, int, int]]) -> int:
+    return max(((x2 - x1) * (y2 - y1) for x1, y1, x2, y2 in boxes), default=0)

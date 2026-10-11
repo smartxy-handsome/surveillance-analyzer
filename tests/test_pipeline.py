@@ -424,3 +424,63 @@ def test_id_switch_captures_fold_into_one_group():
     assert len(result.captures) == 1
     caps = result.captures[0].candidates
     assert [c.timestamp for c in caps] == [0.0, pytest.approx(5 / 3)]
+
+
+def test_class_dispatch_routes_person_and_vehicle():
+    """One inference pass feeding both consumers: person boxes build person
+    segments, vehicle boxes build vehicle events, and neither leaks."""
+    # person track 1 at t=0..0.66; vehicle track 10 at t=1.0..1.66
+    plan = [
+        (0, 1), (0, 1), (0, 1),      # person frames
+        (2, 10), (2, 10), (2, 10),   # vehicle frames
+    ]
+    call_count = 0
+
+    def mock_detect(frames):
+        nonlocal call_count
+        class_id, track_id = plan[call_count]
+        call_count += 1
+        box = (10, 10, 60, 140) if class_id == 0 else (100, 100, 260, 220)
+        return [
+            FrameDetection(
+                has_person=True,
+                confidence=0.9,
+                boxes=[box],
+                track_ids=[track_id],
+                class_ids=[class_id],
+            )
+        ]
+
+    mock_detector = MagicMock()
+    mock_detector.detect.side_effect = mock_detect
+    mock_detector.load.return_value = None
+    mock_detector.unload.return_value = None
+
+    dummy_frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    mock_reader = MagicMock()
+    mock_reader.read_frame.side_effect = lambda index: (True, dummy_frame)
+
+    coordinator = PipelineCoordinator(
+        reader_factory=lambda: mock_reader,
+        video_path="test.mp4",
+        detector=mock_detector,
+        sampling_config=SamplingConfig(fps=3.0),
+        detection_config=DetectionConfig(batch_size=1),
+        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.5),
+        pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
+        detection_target="both",
+    )
+
+    result = coordinator.run(list(range(6)), 3.0)
+
+    # Person side: one segment from the three class-0 frames
+    assert len(result.segments) == 1
+    assert result.segments[0].detection_count == 3
+    # Vehicle side: one event with enter/exit times from class-2 frames
+    assert len(result.vehicle_events) == 1
+    ev = result.vehicle_events[0]
+    assert ev.ordinal == 1
+    assert ev.enter_time == pytest.approx(1.0)
+    assert ev.exit_time == pytest.approx(5 / 3)
+    assert ev.detection_count == 3
+    assert ev.enter_candidate is not None and ev.plate_candidate is not None

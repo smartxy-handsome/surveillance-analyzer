@@ -1,4 +1,4 @@
-import type { Job } from '../api/client'
+import type { DetectionTarget, Job } from '../api/client'
 
 export type PendingItemStatus = 'pending' | 'submitting' | 'error'
 
@@ -41,12 +41,13 @@ export function basename(path: string): string {
  */
 export async function submitItems(
   items: PendingItem[],
-  createJob: (path: string) => Promise<Job>
+  createJob: (path: string, detectionTarget: DetectionTarget) => Promise<Job>,
+  detectionTarget: DetectionTarget = 'person'
 ): Promise<SubmitOutcome[]> {
   const outcomes: SubmitOutcome[] = []
   for (const item of items) {
     try {
-      const job = await createJob(item.path)
+      const job = await createJob(item.path, detectionTarget)
       outcomes.push({ id: item.id, ok: true, jobId: job.id })
     } catch (err) {
       outcomes.push({ id: item.id, ok: false, error: extractError(err) })

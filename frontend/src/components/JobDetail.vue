@@ -4,16 +4,31 @@ import { useJobsStore } from '../stores/jobs'
 import SegmentTable from './SegmentTable.vue'
 import TimelineViewer from './TimelineViewer.vue'
 import CaptureGallery from './CaptureGallery.vue'
+import VehicleEventTable from './VehicleEventTable.vue'
 
 const props = defineProps<{ jobId: string }>()
 const store = useJobsStore()
 const polling = ref<ReturnType<typeof setInterval> | null>(null)
 const progressPercent = computed(() => store.currentJob?.progress?.percent ?? 0)
 
+// Which result pane to show; only reachable for target 'both'.
+const view = ref<'person' | 'vehicle'>('person')
+
+const hasVehicleView = computed(
+  () => store.currentJob?.detection_target === 'vehicle' || store.currentJob?.detection_target === 'both'
+)
+const showPersonView = computed(
+  () => !hasVehicleView.value || view.value === 'person'
+)
+
 onMounted(async () => {
   await store.fetchJob(props.jobId)
   await store.fetchSegments(props.jobId)
   await store.fetchCaptures(props.jobId)
+  if (store.currentJob?.detection_target === 'vehicle' || store.currentJob?.detection_target === 'both') {
+    view.value = store.currentJob.detection_target === 'vehicle' ? 'vehicle' : 'person'
+    await store.fetchVehicleEvents(props.jobId)
+  }
 
   if (store.currentJob?.status === 'processing' || store.currentJob?.status === 'pending') {
     polling.value = setInterval(async () => {
@@ -104,7 +119,12 @@ function getStatusText(status: string): string {
         <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
       </div>
     </div>
-    <div v-if="store.segments.length > 0">
+    <div v-if="store.currentJob.detection_target === 'both'" class="view-toggle">
+      <button :class="{ active: view === 'person' }" @click="view = 'person'">🚶 人体结果</button>
+      <button :class="{ active: view === 'vehicle' }" @click="view = 'vehicle'">🚗 车辆结果</button>
+    </div>
+
+    <div v-if="showPersonView && store.segments.length > 0">
       <h3>
         <span class="icon">📊</span>
         时间轴
@@ -125,10 +145,22 @@ function getStatusText(status: string): string {
         :captures="store.captures"
       />
     </div>
-    <div v-else-if="store.currentJob.status === 'completed'" class="empty">
+    <div
+      v-else-if="showPersonView && store.currentJob.status === 'completed'"
+      class="empty"
+    >
       <span class="empty-icon">✅</span>
       该视频中未检测到人员。
     </div>
+
+    <div v-if="!showPersonView" class="vehicle-section">
+      <h3>
+        <span class="icon">🚗</span>
+        车辆事件 ({{ store.vehicleEvents.length }})
+      </h3>
+      <VehicleEventTable :events="store.vehicleEvents" />
+    </div>
+
     <div v-if="store.currentJob.status === 'failed'" class="error">
       <span class="error-icon">❌</span>
       分析失败，请检查视频文件后重试。
@@ -235,6 +267,39 @@ h3 .icon {
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: var(--text-sm);
+}
+
+.view-toggle {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.view-toggle button {
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.view-toggle button.active {
+  background: rgba(88, 166, 255, 0.15);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.vehicle-section h3 {
+  margin-bottom: var(--space-4);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .progress-bar {

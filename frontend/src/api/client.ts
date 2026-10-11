@@ -9,6 +9,7 @@ export interface Job {
   filename: string
   status: string
   created_at: string
+  detection_target: string
   total_segments: number
   total_person_time: number
   processing_time_seconds?: number
@@ -26,6 +27,26 @@ export interface Job {
     height?: number
     total_frames?: number
   }
+}
+
+export type DetectionTarget = 'person' | 'vehicle' | 'both'
+
+export interface VehicleEvent {
+  id: number
+  enter_time: number
+  exit_time: number
+  enter_time_formatted: string
+  exit_time_formatted: string
+  duration_seconds: number
+  detection_count: number
+  avg_confidence: number
+  max_confidence: number
+  plate_number: string | null
+  plate_confidence: number | null
+  plate_type: string | null
+  enter_capture: Capture | null
+  exit_capture: Capture | null
+  plate_capture: Capture | null
 }
 
 export interface Segment {
@@ -58,8 +79,14 @@ export async function browse(path: string): Promise<BrowseResult> {
   return data
 }
 
-export async function createJob(filePath: string): Promise<Job> {
-  const { data } = await api.post<Job>('/jobs', { file_path: filePath })
+export async function createJob(
+  filePath: string,
+  detectionTarget: DetectionTarget = 'person'
+): Promise<Job> {
+  const { data } = await api.post<Job>('/jobs', {
+    file_path: filePath,
+    detection_target: detectionTarget,
+  })
   return data
 }
 
@@ -89,11 +116,17 @@ export interface Capture {
   timestamp_formatted: string
   confidence: number
   crop_url: string
-  annotated_url: string
+  annotated_url?: string | null
+  kind?: string
 }
 
 export async function getCaptures(jobId: string): Promise<Capture[]> {
   const { data } = await api.get<Capture[]>(`/jobs/${jobId}/captures`)
+  return data
+}
+
+export async function getVehicleEvents(jobId: string): Promise<VehicleEvent[]> {
+  const { data } = await api.get<VehicleEvent[]>(`/jobs/${jobId}/vehicle-events`)
   return data
 }
 

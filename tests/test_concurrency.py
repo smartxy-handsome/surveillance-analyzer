@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.core.config import load_config
 from src.storage.database import Base
-from src.storage.repository import CaptureRepository, JobRepository, SegmentRepository
+from src.storage.repository import (
+    CaptureRepository,
+    JobRepository,
+    SegmentRepository,
+    VehicleEventRepository,
+)
 from src.web.app import create_app
 
 
@@ -36,6 +41,7 @@ async def app_with_semaphore():
     app.state.job_repo = JobRepository(session_factory)
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
+    app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(TEST_MAX_CONCURRENT)
     return app

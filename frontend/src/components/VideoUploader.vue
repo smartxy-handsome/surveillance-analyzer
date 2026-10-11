@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { createJob } from '../api/client'
+import type { DetectionTarget } from '../api/client'
 import FileBrowser from './FileBrowser.vue'
 import PendingList from './PendingList.vue'
 import RecentHistory from './RecentHistory.vue'
@@ -17,9 +18,16 @@ const submitting = ref(false)
 const error = ref<string | null>(null)
 const browser = ref<InstanceType<typeof FileBrowser> | null>(null)
 const items = ref<PendingItem[]>([])
+const detectionTarget = ref<DetectionTarget>('person')
 const { addEntry } = useRecentHistory()
 
 const canSubmit = computed(() => items.value.length > 0 && !submitting.value)
+
+const targetOptions: { value: DetectionTarget; label: string }[] = [
+  { value: 'person', label: '🚶 人体识别' },
+  { value: 'vehicle', label: '🚗 车辆识别' },
+  { value: 'both', label: '两者都选' },
+]
 
 function addPath(path: string) {
   const trimmed = path.trim()
@@ -54,7 +62,7 @@ async function onSubmit() {
   submitting.value = true
   error.value = null
   try {
-    const outcomes = await submitItems(items.value, createJob)
+    const outcomes = await submitItems(items.value, createJob, detectionTarget.value)
     const remaining: PendingItem[] = []
     for (let i = 0; i < items.value.length; i++) {
       const item = items.value[i]
@@ -115,6 +123,20 @@ function onHistorySelect(id: string) {
       </button>
     </form>
     <p v-if="error" class="error">{{ error }}</p>
+
+    <div class="target-selector" role="radiogroup" aria-label="检测目标">
+      <span class="target-label">检测目标：</span>
+      <label v-for="opt in targetOptions" :key="opt.value" class="target-option">
+        <input
+          type="radio"
+          name="detection-target"
+          :value="opt.value"
+          v-model="detectionTarget"
+          :disabled="submitting"
+        />
+        {{ opt.label }}
+      </label>
+    </div>
 
     <PendingList
       :items="items"
@@ -211,6 +233,34 @@ form {
   color: var(--accent-red);
   font-size: var(--text-sm);
   margin-top: var(--space-2);
+}
+
+.target-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.target-label {
+  color: var(--text-secondary);
+}
+
+.target-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.target-option input {
+  accent-color: var(--accent-blue);
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { submitItems, extractError, basename } from './submitItems'
 import type { PendingItem } from './submitItems'
+import type { DetectionTarget } from '../api/client'
 import type { Job } from '../api/client'
 
 function makeItem(path: string): PendingItem {
@@ -13,6 +14,7 @@ function makeJob(id: string, filename: string): Job {
     filename,
     status: 'pending',
     created_at: '',
+    detection_target: 'person',
     total_segments: 0,
     total_person_time: 0,
   }
@@ -35,8 +37,8 @@ describe('submitItems', () => {
       { id: 'D:\\b.mp4', ok: true, jobId: 'job-2' },
     ])
     expect(createJob).toHaveBeenCalledTimes(2)
-    expect(createJob).toHaveBeenNthCalledWith(1, 'D:\\a.mp4')
-    expect(createJob).toHaveBeenNthCalledWith(2, 'D:\\b.mp4')
+    expect(createJob).toHaveBeenNthCalledWith(1, 'D:\\a.mp4', 'person')
+    expect(createJob).toHaveBeenNthCalledWith(2, 'D:\\b.mp4', 'person')
   })
 
   it('marks a failed item with the backend detail without stopping the rest', async () => {
@@ -75,5 +77,26 @@ describe('basename', () => {
   })
   it('handles POSIX slash paths', () => {
     expect(basename('/home/u/v.mp4')).toBe('v.mp4')
+  })
+})
+
+
+describe('submitItems detection target passthrough', () => {
+  it('forwards the detection target to every createJob call', async () => {
+    const calls: [string, string][] = []
+    const items: PendingItem[] = [
+      { id: 'a', path: 'D:\v\a.mp4', filename: 'a.mp4', status: 'pending' },
+      { id: 'b', path: 'D:\v\b.mp4', filename: 'b.mp4', status: 'pending' },
+    ]
+    const fakeCreate = (path: string, target: DetectionTarget) => {
+      calls.push([path, target])
+      return Promise.resolve(makeJob(path, 'x.mp4'))
+    }
+    const outcomes = await submitItems(items, fakeCreate, 'vehicle')
+    expect(outcomes.every((o) => o.ok)).toBe(true)
+    expect(calls).toEqual([
+      ['D:\v\a.mp4', 'vehicle'],
+      ['D:\v\b.mp4', 'vehicle'],
+    ])
   })
 })

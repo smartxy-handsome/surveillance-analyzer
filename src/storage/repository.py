@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from src.core.timeutil import utcnow
-from src.storage.database import CaptureModel, JobModel, SegmentModel
+from src.storage.database import CaptureModel, JobModel, SegmentModel, VehicleEventModel
 
 
 @dataclass
@@ -16,6 +16,7 @@ class JobCreate:
     confidence_threshold: float
     merge_gap_seconds: float
     min_segment_seconds: float
+    detection_target: str = "person"
 
 
 @dataclass
@@ -37,6 +38,7 @@ class JobRepository:
                 id=job.id,
                 filename=job.filename,
                 file_path=job.file_path,
+                detection_target=job.detection_target,
                 sampling_fps=job.sampling_fps,
                 model_name=job.model_name,
                 confidence_threshold=job.confidence_threshold,
@@ -156,6 +158,19 @@ class CaptureCreate:
     confidence: float
     crop_path: str
     annotated_path: str
+    kind: str = "appearance"
+
+
+@dataclass
+class VehicleEventCreate:
+    enter_time: float
+    exit_time: float
+    detection_count: int
+    avg_confidence: float
+    max_confidence: float
+    plate_number: str | None = None
+    plate_confidence: float | None = None
+    plate_type: str | None = None
 
 
 class CaptureRepository:
@@ -172,6 +187,7 @@ class CaptureRepository:
                     confidence=cap.confidence,
                     crop_path=cap.crop_path,
                     annotated_path=cap.annotated_path,
+                    kind=cap.kind,
                 )
                 session.add(model)
             await session.commit()
@@ -209,4 +225,45 @@ class CaptureRepository:
             result = await session.execute(stmt)
             for cap in result.scalars().all():
                 await session.delete(cap)
+            await session.commit()
+
+
+class VehicleEventRepository:
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+
+    async def bulk_create(self, job_id: str, events: list[VehicleEventCreate]):
+        async with self._session_factory() as session:
+            for ev in events:
+                model = VehicleEventModel(
+                    job_id=job_id,
+                    enter_time=ev.enter_time,
+                    exit_time=ev.exit_time,
+                    duration=ev.exit_time - ev.enter_time,
+                    detection_count=ev.detection_count,
+                    avg_confidence=ev.avg_confidence,
+                    max_confidence=ev.max_confidence,
+                    plate_number=ev.plate_number,
+                    plate_confidence=ev.plate_confidence,
+                    plate_type=ev.plate_type,
+                )
+                session.add(model)
+            await session.commit()
+
+    async def list_by_job(self, job_id: str) -> list[VehicleEventModel]:
+        async with self._session_factory() as session:
+            stmt = (
+                select(VehicleEventModel)
+                .where(VehicleEventModel.job_id == job_id)
+                .order_by(VehicleEventModel.enter_time)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def delete_by_job(self, job_id: str):
+        async with self._session_factory() as session:
+            stmt = select(VehicleEventModel).where(VehicleEventModel.job_id == job_id)
+            result = await session.execute(stmt)
+            for ev in result.scalars().all():
+                await session.delete(ev)
             await session.commit()

@@ -193,3 +193,15 @@ def test_chained_id_switches_collapse_onto_first():
     assert segs[0].source_key == 1
     assert segs[0].detection_count == 6
     assert agg.key_map == {2: 1, 3: 1}
+
+
+# --- vehicle-path reuse (same aggregator, vehicle track ids) -------------
+
+def test_vehicle_tracks_aggregate_identically():
+    """The vehicle consumer reuses TrackAggregator: enter/exit/merge all hold."""
+    agg = TrackAggregator(make_config())
+    for ts in (0.0, 1.0, 2.0):
+        agg.accumulate(ts, True, 0.8, track_id=10, box=(0, 0, 200, 120))
+    segs = agg.finalize()
+    assert len(segs) == 1
+    assert segs[0].start_time == 0.0 and segs[0].end_time == 2.0

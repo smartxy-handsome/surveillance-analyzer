@@ -22,6 +22,10 @@ class FrameDetection:
     # Per-box tracker identity from ByteTrack, parallel to `boxes`. Empty when
     # the detector runs without tracking (legacy boolean aggregation path).
     track_ids: list[int] = field(default_factory=list)
+    # Per-box COCO class id, parallel to `boxes`. Empty means "all person"
+    # (legacy single-target mode). Person dispatch uses class 0; the vehicle
+    # path consumes classes 2/5/7 (car/bus/truck).
+    class_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from src.utils.time_format import seconds_to_hms
-from src.web.schemas import CaptureResponse, SegmentResponse
+from src.web.schemas import CaptureResponse, SegmentResponse, VehicleEventResponse
 
 
 def create_results_router() -> APIRouter:
@@ -52,9 +52,68 @@ def create_results_router() -> APIRouter:
                 confidence=c.confidence,
                 crop_url=f"/api/captures/{c.id}/image?type=crop",
                 annotated_url=f"/api/captures/{c.id}/image?type=annotated",
+                kind=c.kind or "appearance",
             )
             for c in captures
         ]
+
+    @router.get("/jobs/{job_id}/vehicle-events", response_model=list[VehicleEventResponse])
+    async def get_vehicle_events(request: Request, job_id: str):
+        """Per-vehicle enter/exit records with plate readout and the three
+        capture images (appearance / departure / plate close-up)."""
+        job_repo = request.app.state.job_repo
+        event_repo = request.app.state.vehicle_event_repo
+        capture_repo = request.app.state.capture_repo
+
+        job = await job_repo.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+
+        events = await event_repo.list_by_job(job_id)
+        captures = await capture_repo.list_by_job(job_id)
+        # captures.segment_index is the 1-based event ordinal (enter-time order)
+        by_slot = {
+            (c.segment_index, c.kind or "appearance"): c
+            for c in captures
+        }
+
+        out = []
+        for ordinal, e in enumerate(events, start=1):
+            def cap(kind: str) -> CaptureResponse | None:
+                c = by_slot.get((ordinal, kind))
+                if not c:
+                    return None
+                return CaptureResponse(
+                    id=c.id,
+                    segment_index=c.segment_index,
+                    timestamp=c.timestamp,
+                    timestamp_formatted=seconds_to_hms(c.timestamp),
+                    confidence=c.confidence,
+                    crop_url=f"/api/captures/{c.id}/image?type=crop",
+                    annotated_url=f"/api/captures/{c.id}/image?type=annotated" if c.annotated_path else None,
+                    kind=c.kind or kind,
+                )
+
+            out.append(
+                VehicleEventResponse(
+                    id=e.id,
+                    enter_time=e.enter_time,
+                    exit_time=e.exit_time,
+                    enter_time_formatted=seconds_to_hms(e.enter_time),
+                    exit_time_formatted=seconds_to_hms(e.exit_time),
+                    duration_seconds=e.duration,
+                    detection_count=e.detection_count,
+                    avg_confidence=e.avg_confidence,
+                    max_confidence=e.max_confidence,
+                    plate_number=e.plate_number,
+                    plate_confidence=e.plate_confidence,
+                    plate_type=e.plate_type,
+                    enter_capture=cap("appearance"),
+                    exit_capture=cap("departure"),
+                    plate_capture=cap("plate"),
+                )
+            )
+        return out
 
     @router.get("/captures/{capture_id}/image")
     async def get_capture_image(request: Request, capture_id: int, type: str = Query(default="crop")):

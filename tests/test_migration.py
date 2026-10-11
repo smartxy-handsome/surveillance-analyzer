@@ -19,12 +19,13 @@ async def test_init_db_adds_missing_column_to_old_database(tmp_path):
     """
     db_path = tmp_path / "old.db"
 
-    # Build the current schema, then remove the new column to simulate a
-    # database written by the previous release.
+    # Build the current schema, then remove the post-release columns to
+    # simulate a database written by the previous release.
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE jobs DROP COLUMN dropped_frames"))
+        await conn.execute(text("ALTER TABLE jobs DROP COLUMN detection_target"))
     await engine.dispose()
 
     conn = sqlite3.connect(db_path)
@@ -40,12 +41,13 @@ async def test_init_db_adds_missing_column_to_old_database(tmp_path):
     # The upgrade: init_db on the old database
     session_factory = await init_db(f"sqlite+aiosqlite:///{db_path}")
 
-    # Old row survived, new column is readable and NULL
+    # Old row survived, new columns readable (detection_target defaulted)
     async with session_factory() as session:
         job = await session.get(JobModel, "old-1")
         assert job is not None
         assert job.status == "completed"
         assert job.dropped_frames is None
+    assert job.detection_target == "person"
 
     # Re-running init_db (server restart) is a no-op, not an error
     session_factory = await init_db(f"sqlite+aiosqlite:///{db_path}")

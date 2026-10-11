@@ -230,3 +230,65 @@ def test_get_capture_output_dir_keyed_by_job_id():
 
     d = get_capture_output_dir(r"D:\videos\footage.mp4", "job-42")
     assert d.replace("\\", "/").endswith("data/captures/job-42")
+
+
+def _vehicle_event(ordinal=1):
+    from src.core.models import CaptureCandidate, VehicleEventData
+
+    frame = np.full((240, 320, 3), 60, dtype=np.uint8)
+    cand = CaptureCandidate(
+        frame_index=0, timestamp=1.0, confidence=0.9, image=frame, boxes=[(40, 80, 200, 200)]
+    )
+    return VehicleEventData(
+        ordinal=ordinal,
+        enter_time=1.0,
+        exit_time=3.0,
+        detection_count=2,
+        avg_confidence=0.9,
+        max_confidence=0.9,
+        enter_candidate=cand,
+        exit_candidate=cand,
+        plate_candidate=cand,
+    )
+
+
+def test_save_vehicle_event_writes_three_kinds():
+    """A vehicle event saves appearance + departure + plate captures."""
+    from src.pipeline.capture_saver import CaptureSaver
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        saver = CaptureSaver(tmpdir)
+        results, plate = saver.save_vehicle_event(_vehicle_event())
+        kinds = sorted(r.kind for r in results)
+        assert kinds == ["appearance", "departure", "plate"]
+        assert plate is None  # no recognizer provided
+        for r in results:
+            assert Path(r.crop_path).exists()
+            if r.kind == "plate":
+                assert r.annotated_path == ""
+            else:
+                assert Path(r.annotated_path).exists()
+
+
+def test_save_vehicle_event_with_mock_recognizer():
+    """A successful plate read tightens the crop around the plate box and is
+    returned for DB storage; failure leaves number empty."""
+    from src.core.models import PlateResult
+    from src.pipeline.capture_saver import CaptureSaver
+
+    class FakeRecognizer:
+        def recognize(self, crop):
+            h, w = crop.shape[:2]
+            return PlateResult(
+                number="京A12345",
+                confidence=0.97,
+                plate_type="blue",
+                plate_box=(w // 4, h // 3, w // 2, h // 2),
+            )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        saver = CaptureSaver(tmpdir)
+        results, plate = saver.save_vehicle_event(_vehicle_event(), FakeRecognizer())
+        assert plate is not None and plate.number == "京A12345"
+        plate_row = next(r for r in results if r.kind == "plate")
+        assert Path(plate_row.crop_path).exists()

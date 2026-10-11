@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.core.config import load_config
 from src.storage.database import Base
-from src.storage.repository import CaptureRepository, JobRepository, SegmentRepository
+from src.storage.repository import (
+    CaptureRepository,
+    JobRepository,
+    SegmentRepository,
+    VehicleEventRepository,
+)
 from src.web.app import create_app
 
 
@@ -30,6 +35,7 @@ async def client():
     app.state.job_repo = JobRepository(session_factory)
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
+    app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
     app.state.job_progress = {}
@@ -325,3 +331,113 @@ async def test_run_analysis_skips_deleted_queued_job(client, tmp_path, monkeypat
     # a 'failed' status for a non-existent row.
     await jobs_module._run_analysis(job_id, client.test_app, None)
     assert await repo.get(job_id) is None
+
+
+@pytest.mark.asyncio
+async def test_create_job_with_detection_target(client, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"\x00" * 100)
+    resp = await client.post(
+        "/api/jobs", json={"file_path": str(video), "detection_target": "vehicle"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["detection_target"] == "vehicle"
+
+    resp = await client.get(f"/api/jobs/{resp.json()['id']}")
+    assert resp.json()["detection_target"] == "vehicle"
+
+
+@pytest.mark.asyncio
+async def test_create_job_rejects_unknown_target(client, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"\x00" * 100)
+    resp = await client.post(
+        "/api/jobs", json={"file_path": str(video), "detection_target": "bird"}
+    )
+    assert resp.status_code == 422  # pydantic validation
+
+
+@pytest.mark.asyncio
+async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
+    """Seeded vehicle events + kind-tagged captures come back grouped."""
+    from src.storage.repository import (
+        CaptureCreate,
+        JobCreate,
+        VehicleEventCreate,
+    )
+
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"\x00" * 100)
+    repo = client.test_app.state.job_repo
+    job_id = "veh-1"
+    await repo.create(
+        JobCreate(
+            id=job_id,
+            filename="v.mp4",
+            file_path=str(video.resolve()),
+            detection_target="vehicle",
+            sampling_fps=3.0,
+            model_name="yolov8m.pt",
+            confidence_threshold=0.3,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+    ve_repo = client.test_app.state.vehicle_event_repo
+    await ve_repo.bulk_create(
+        job_id,
+        [
+            VehicleEventCreate(
+                enter_time=10.0,
+                exit_time=25.0,
+                detection_count=12,
+                avg_confidence=0.8,
+                max_confidence=0.9,
+                plate_number="京A12345",
+                plate_confidence=0.97,
+                plate_type="blue",
+            )
+        ],
+    )
+    await client.test_app.state.capture_repo.bulk_create(
+        job_id,
+        [
+            CaptureCreate(
+                segment_index=1,
+                timestamp=10.0,
+                confidence=0.9,
+                crop_path="C:\captures\enter.jpg",
+                annotated_path="C:\captures\enter_ann.jpg",
+                kind="appearance",
+            ),
+            CaptureCreate(
+                segment_index=1,
+                timestamp=25.0,
+                confidence=0.9,
+                crop_path="C:\captures\exit.jpg",
+                annotated_path="C:\captures\exit_ann.jpg",
+                kind="departure",
+            ),
+            CaptureCreate(
+                segment_index=1,
+                timestamp=22.0,
+                confidence=0.9,
+                crop_path="C:\captures\plate.jpg",
+                annotated_path="",
+                kind="plate",
+            ),
+        ],
+    )
+
+    resp = await client.get(f"/api/jobs/{job_id}/vehicle-events")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["enter_time"] == 10.0 and ev["exit_time"] == 25.0
+    assert ev["plate_number"] == "京A12345"
+    assert ev["plate_type"] == "blue"
+    assert ev["enter_capture"]["kind"] == "appearance"
+    assert ev["plate_capture"]["kind"] == "plate"
+    # plate capture has no annotated image
+    assert ev["plate_capture"]["annotated_url"] is None

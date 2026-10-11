@@ -142,7 +142,7 @@ function onWheel(e: WheelEvent) {
             {{ captureRoleLabel(roleOf(capture, groupedCaptures[segIdx])) }}
           </span>
           <img
-            :src="viewMode === 'crop' ? capture.crop_url : capture.annotated_url"
+            :src="viewMode === 'crop' ? capture.crop_url : (capture.annotated_url ?? '')"
             :alt="`${capture.timestamp_formatted} 的截取`"
             loading="lazy"
           />
@@ -190,7 +190,7 @@ function onWheel(e: WheelEvent) {
           :class="{ dragging: isDragging }"
         >
           <img
-            :src="viewMode === 'crop' ? selectedImage.crop_url : selectedImage.annotated_url"
+            :src="viewMode === 'crop' ? selectedImage.crop_url : (selectedImage.annotated_url ?? '')"
             :alt="`${selectedImage.timestamp_formatted} 的截取`"
             :style="{
               transform: `scale(${zoomLevel}) translate(${panX / zoomLevel}px, ${panY / zoomLevel}px)`,
