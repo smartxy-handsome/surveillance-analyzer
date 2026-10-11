@@ -66,8 +66,8 @@ def test_reject_parallel_decode_threads(tmp_path):
 
 
 def test_detection_defaults_tuned_for_surveillance():
-    """yolov8s@1280: measured 2.3x recall vs yolov8n@640 on 720p footage."""
+    """yolov8m@1280: 2.5x more confirmed records vs yolov8s@1280 on night footage."""
     config = load_config(Path("config/default.yaml"))
-    assert config.detection.model_name == "yolov8s.pt"
+    assert config.detection.model_name == "yolov8m.pt"
     assert config.detection.imgsz == 1280
     assert config.video.hw_accel is True

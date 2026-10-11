@@ -16,7 +16,7 @@
 - Python 3.12([uv](https://docs.astral.sh/uv/) 管理依赖)
 - Node.js 18+(前端构建)
 - GPU 可选(CUDA 时检测走 `cuda:0`,否则改 `config/default.yaml` 的 `device` 为 `cpu`)
-- 模型权重 `yolov8n.pt` 放在仓库根目录(不入库,自行下载)
+- 模型权重 `yolov8m.pt` 放在仓库根目录(不入库;ultralytics 首次运行会自动下载)
 
 ## 启动
 
@@ -42,7 +42,7 @@ CLI 参数可覆盖配置:`--host`、`--port`、`--dev`(不挂载前端构建产
 |---|---|---|
 | `video` | `supported_formats` / `max_file_size_mb` / `hw_accel` | 允许的容器格式、提交时的文件大小上限;硬件解码(D3D11/DXVA),驱动不支持时自动回退软件解码 |
 | `sampling` | `fps` / `strategy` | 抽帧采样率;采样策略当前仅支持 `uniform` |
-| `detection` | `model_name` / `confidence_threshold` / `device` / `batch_size` / `imgsz` | YOLOv8 模型、置信度阈值、推理设备(无 CUDA 时自动回退 CPU)、批大小、推理输入尺寸。默认 `yolov8s@1280`:在 720p 广角监控素材上比 `yolov8n@640` 多检出 2.3 倍人物;纯 CPU 或近景相机可降回 `yolov8n@640` 换速度 |
+| `detection` | `model_name` / `confidence_threshold` / `device` / `batch_size` / `imgsz` | YOLOv8 模型、置信度阈值、推理设备(无 CUDA 时自动回退 CPU)、批大小、推理输入尺寸。默认 `yolov8m@1280`:夜间素材实测确认记录 2.5 倍于 `yolov8s@1280`、疑似记录少 40%;纯 CPU 或近景相机可降回 `yolov8s@640` 换速度 |
 | `aggregation` | `merge_gap_seconds` / `min_segment_seconds` | 检测合并间隙与最短时间段时长 |
 | `pipeline` | `frame_queue_size` / `num_decode_threads` / `max_concurrent_jobs` | 解码线程数必须为 1(乱序帧会破坏聚合的时序假设);并发任务闸 |
 | `web` | `host` / `port` / `cors_origins` | 监听地址与 CORS |
