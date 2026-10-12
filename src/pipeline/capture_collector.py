@@ -51,6 +51,7 @@ class SegmentCaptureCollector:
                 "last": candidate,
                 "best": candidate,
                 "best_area": area,
+                "plate": [(area, candidate)],
             }
             self._segment_times[segment_key] = (timestamp, timestamp)
             return
@@ -66,11 +67,14 @@ class SegmentCaptureCollector:
             pair["first"] = candidate
         if timestamp >= pair["last"].timestamp:
             pair["last"] = candidate
-        # Plate close-up source: the frame where the target box was largest
-        # (closest to the camera -> most plate/detail pixels).
+        # Plate close-up sources: the largest-area frames (closest to the
+        # camera -> most plate/detail pixels), bounded for bounded memory.
         if area > pair["best_area"]:
             pair["best"] = candidate
             pair["best_area"] = area
+        pair["plate"].append((area, candidate))
+        pair["plate"].sort(key=lambda item: item[0], reverse=True)
+        del pair["plate"][MAX_PLATE_CANDIDATES:]
 
     def get_all_captures(self) -> list[SegmentCaptureData]:
         """Return all collected captures, one SegmentCaptureData per segment.
@@ -93,12 +97,17 @@ class SegmentCaptureCollector:
                     start_time=start_time,
                     end_time=end_time,
                     candidates=candidates,
-                    plate_candidate=pair["best"],
+                    plate_candidates=[cand for _, cand in pair["plate"]],
                 )
             )
         # Sort by segment_index for consistent output
         result.sort(key=lambda x: x.segment_index)
         return result
+
+
+# Plate close-up attempts per vehicle: distant/angled plates often read on
+# only one of the largest-area frames, so keep a few tries.
+MAX_PLATE_CANDIDATES = 5
 
 
 def _max_box_area(boxes: list[tuple[int, int, int, int]]) -> int:

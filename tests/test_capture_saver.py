@@ -248,7 +248,7 @@ def _vehicle_event(ordinal=1):
         max_confidence=0.9,
         enter_candidate=cand,
         exit_candidate=cand,
-        plate_candidate=cand,
+        plate_candidates=[cand],
     )
 
 
@@ -292,3 +292,77 @@ def test_save_vehicle_event_with_mock_recognizer():
         assert plate is not None and plate.number == "京A12345"
         plate_row = next(r for r in results if r.kind == "plate")
         assert Path(plate_row.crop_path).exists()
+
+
+def test_single_frame_event_skips_duplicate_departure():
+    """A one-detection event must not write the same image twice."""
+    from src.core.models import CaptureCandidate, VehicleEventData
+
+    frame = np.full((120, 160, 3), 90, dtype=np.uint8)
+    cand = CaptureCandidate(
+        frame_index=0, timestamp=5.0, confidence=0.9, image=frame, boxes=[(10, 20, 100, 100)]
+    )
+    event = VehicleEventData(
+        ordinal=1,
+        enter_time=5.0,
+        exit_time=5.0,
+        detection_count=1,
+        avg_confidence=0.9,
+        max_confidence=0.9,
+        enter_candidate=cand,
+        exit_candidate=None,
+        plate_candidates=[cand],
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        saver = CaptureSaver(tmpdir)
+        results, _ = saver.save_vehicle_event(event)
+        kinds = sorted(r.kind for r in results)
+        assert kinds == ["appearance", "plate"]  # no duplicate departure
+
+
+def test_plate_recognition_tries_all_candidates_and_keeps_best():
+    """Distant plates often read on only one large-area frame: every
+    candidate is attempted and the highest-confidence read wins."""
+    from src.core.models import CaptureCandidate, PlateResult, VehicleEventData
+
+    frames = [np.full((120, 160, 3), 40 + i * 20, dtype=np.uint8) for i in range(3)]
+    cands = [
+        CaptureCandidate(
+            frame_index=i, timestamp=1.0 + i, confidence=0.9, image=frames[i], boxes=[(10, 20, 110, 100)]
+        )
+        for i in range(3)
+    ]
+    event = VehicleEventData(
+        ordinal=1,
+        enter_time=1.0,
+        exit_time=3.0,
+        detection_count=3,
+        avg_confidence=0.9,
+        max_confidence=0.9,
+        enter_candidate=cands[0],
+        exit_candidate=cands[-1],
+        plate_candidates=[cands[2], cands[1], cands[0]],  # largest-area first
+    )
+
+    attempts = []
+
+    class FakeRecognizer:
+        def recognize(self, crop):
+            # identify the frame by brightness
+            value = int(crop[0, 0][0])
+            attempts.append(value)
+            conf = {40: 0.3, 60: 0.2, 80: 0.95}[value]
+            return PlateResult(
+                number=None if conf < 0.5 else f"PLATE-{value}",
+                confidence=conf,
+                plate_type="blue",
+                plate_box=None,
+            )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        saver = CaptureSaver(tmpdir)
+        results, plate = saver.save_vehicle_event(event, FakeRecognizer())
+
+    assert attempts == [80, 60, 40]  # candidates arrive largest-area first
+    assert plate is not None and plate.number == "PLATE-80"
+    assert plate.confidence == 0.95

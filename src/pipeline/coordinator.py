@@ -14,13 +14,17 @@ from src.core.models import (
     TimeSegment,
     VehicleEventData,
 )
-from src.pipeline.capture_collector import SegmentCaptureCollector
+from src.pipeline.capture_collector import MAX_PLATE_CANDIDATES, SegmentCaptureCollector
 from src.pipeline.frame_queue import FrameQueue
 from src.pipeline.segment_aggregator import SegmentAggregator
 from src.pipeline.track_aggregator import TrackAggregator
 
 # COCO classes routed to the vehicle consumer (car / bus / truck)
 VEHICLE_CLASS_IDS = frozenset({2, 5, 7})
+
+
+def _box_area(boxes: list[tuple[int, int, int, int]]) -> int:
+    return max(((x2 - x1) * (y2 - y1) for x1, y1, x2, y2 in boxes), default=0)
 
 
 class PipelineCoordinator:
@@ -254,7 +258,7 @@ class PipelineCoordinator:
                     max_confidence=seg.max_confidence,
                     enter_candidate=candidates[0] if candidates else None,
                     exit_candidate=candidates[-1] if len(candidates) > 1 else None,
-                    plate_candidate=cap.plate_candidate if cap else None,
+                    plate_candidates=list(cap.plate_candidates) if cap else [],
                 )
             )
         return events
@@ -272,18 +276,24 @@ class PipelineCoordinator:
             final_key = key_map.get(cap.segment_index, cap.segment_index)
             if final_key in grouped:
                 grouped[final_key].candidates.extend(cap.candidates)
+                grouped[final_key].plate_candidates.extend(cap.plate_candidates)
             else:
                 grouped[final_key] = SegmentCaptureData(
                     segment_index=final_key,
                     start_time=cap.start_time,
                     end_time=cap.end_time,
                     candidates=list(cap.candidates),
+                    plate_candidates=list(cap.plate_candidates),
                 )
         merged = []
         for cap in grouped.values():
             cap.candidates.sort(key=lambda c: c.timestamp)
             if len(cap.candidates) > 2:
                 cap.candidates = [cap.candidates[0], cap.candidates[-1]]
+            cap.plate_candidates.sort(
+                key=lambda c: _box_area(c.boxes), reverse=True
+            )
+            del cap.plate_candidates[MAX_PLATE_CANDIDATES:]
             cap.start_time = cap.candidates[0].timestamp
             cap.end_time = cap.candidates[-1].timestamp
             merged.append(cap)

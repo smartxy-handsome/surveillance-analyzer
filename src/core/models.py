@@ -144,9 +144,9 @@ class SegmentCaptureData:
     start_time: float
     end_time: float
     candidates: list[CaptureCandidate]
-    # Largest-box-area frame for the segment -- the plate close-up source on
-    # the vehicle path; None on the person path.
-    plate_candidate: CaptureCandidate | None = None
+    # Top frames by box area (largest first, bounded) -- plate close-up
+    # candidates on the vehicle path; empty on the person path.
+    plate_candidates: list[CaptureCandidate] = field(default_factory=list)
 
 
 @dataclass
@@ -166,7 +166,7 @@ class VehicleEventData:
     max_confidence: float
     enter_candidate: CaptureCandidate | None = None
     exit_candidate: CaptureCandidate | None = None
-    plate_candidate: CaptureCandidate | None = None
+    plate_candidates: list[CaptureCandidate] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -194,6 +194,7 @@ class CaptureResult:
     crop_path: str
     annotated_path: str
     kind: str = "appearance"  # appearance | departure | plate
+    target: str = "person"  # which consumer produced it (person | vehicle)
 
 
 @dataclass

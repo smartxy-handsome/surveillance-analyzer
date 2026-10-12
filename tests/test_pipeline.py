@@ -483,4 +483,4 @@ def test_class_dispatch_routes_person_and_vehicle():
     assert ev.enter_time == pytest.approx(1.0)
     assert ev.exit_time == pytest.approx(5 / 3)
     assert ev.detection_count == 3
-    assert ev.enter_candidate is not None and ev.plate_candidate is not None
+    assert ev.enter_candidate is not None and ev.plate_candidates  # best frames kept

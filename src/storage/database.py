@@ -66,6 +66,9 @@ class CaptureModel(Base):
     crop_path = Column(String, nullable=False)
     annotated_path = Column(String, nullable=False)
     kind = Column(String, nullable=False, default="appearance")
+    # Namespace split for 'both' jobs: person segments and vehicle events both
+    # count from 1, so captures must be attributable to their consumer.
+    target = Column(String, nullable=False, default="person")
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -97,6 +100,7 @@ async def init_db(database_url: str) -> async_sessionmaker[AsyncSession]:
             ("jobs", Column("dropped_frames", Integer, nullable=True)),
             ("jobs", Column("detection_target", String, nullable=False, default="person")),
             ("captures", Column("kind", String, nullable=False, default="appearance")),
+            ("captures", Column("target", String, nullable=False, default="person")),
         ]:
             await conn.run_sync(
                 lambda sync_conn, t=table, c=column: _add_column_if_missing(sync_conn, t, c)

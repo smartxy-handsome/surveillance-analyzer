@@ -159,6 +159,7 @@ class CaptureCreate:
     crop_path: str
     annotated_path: str
     kind: str = "appearance"
+    target: str = "person"
 
 
 @dataclass
@@ -188,17 +189,17 @@ class CaptureRepository:
                     crop_path=cap.crop_path,
                     annotated_path=cap.annotated_path,
                     kind=cap.kind,
+                    target=cap.target,
                 )
                 session.add(model)
             await session.commit()
 
-    async def list_by_job(self, job_id: str) -> list[CaptureModel]:
+    async def list_by_job(self, job_id: str, target: str | None = None) -> list[CaptureModel]:
         async with self._session_factory() as session:
-            stmt = (
-                select(CaptureModel)
-                .where(CaptureModel.job_id == job_id)
-                .order_by(CaptureModel.segment_index, CaptureModel.timestamp)
-            )
+            stmt = select(CaptureModel).where(CaptureModel.job_id == job_id)
+            if target:
+                stmt = stmt.where(CaptureModel.target == target)
+            stmt = stmt.order_by(CaptureModel.segment_index, CaptureModel.timestamp)
             result = await session.execute(stmt)
             return list(result.scalars().all())
 

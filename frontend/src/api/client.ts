@@ -120,8 +120,13 @@ export interface Capture {
   kind?: string
 }
 
-export async function getCaptures(jobId: string): Promise<Capture[]> {
-  const { data } = await api.get<Capture[]>(`/jobs/${jobId}/captures`)
+export async function getCaptures(
+  jobId: string,
+  target?: 'person' | 'vehicle'
+): Promise<Capture[]> {
+  const { data } = await api.get<Capture[]>(`/jobs/${jobId}/captures`, {
+    params: target ? { target } : undefined,
+  })
   return data
 }
 

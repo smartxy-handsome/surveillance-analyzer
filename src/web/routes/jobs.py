@@ -399,10 +399,16 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                 vehicle_event_repo = app.state.vehicle_event_repo
                 output_dir = get_capture_output_dir(job.file_path, job_id)
                 saver = CaptureSaver(output_dir)
-                # Injection point for tests; production falls back to the
-                # best-effort HyperLPR3 recognizer.
+                # Injection point for tests; production builds the recognizer
+                # once per process (model init is not free).
                 recognizer_factory = getattr(app.state, "plate_recognizer_factory", None)
-                recognizer = recognizer_factory() if recognizer_factory else _make_plate_recognizer()
+                if recognizer_factory is not None:
+                    recognizer = recognizer_factory()
+                else:
+                    recognizer = getattr(app.state, "_plate_recognizer", None)
+                    if recognizer is None:
+                        recognizer = _make_plate_recognizer()
+                        app.state._plate_recognizer = recognizer
                 for event in result.vehicle_events:
                     cap_results, plate = saver.save_vehicle_event(event, recognizer)
                     if cap_results:
@@ -416,6 +422,7 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                                     crop_path=r.crop_path,
                                     annotated_path=r.annotated_path,
                                     kind=r.kind,
+                                    target=r.target,
                                 )
                                 for r in cap_results
                             ],

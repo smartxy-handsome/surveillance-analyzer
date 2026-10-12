@@ -34,7 +34,11 @@ def create_results_router() -> APIRouter:
         ]
 
     @router.get("/jobs/{job_id}/captures", response_model=list[CaptureResponse])
-    async def get_captures(request: Request, job_id: str):
+    async def get_captures(
+        request: Request,
+        job_id: str,
+        target: str | None = Query(default=None),
+    ):
         job_repo = request.app.state.job_repo
         capture_repo = request.app.state.capture_repo
 
@@ -42,7 +46,7 @@ def create_results_router() -> APIRouter:
         if not job:
             raise HTTPException(404, "Job not found")
 
-        captures = await capture_repo.list_by_job(job_id)
+        captures = await capture_repo.list_by_job(job_id, target=target)
         return [
             CaptureResponse(
                 id=c.id,
@@ -51,8 +55,9 @@ def create_results_router() -> APIRouter:
                 timestamp_formatted=seconds_to_hms(c.timestamp),
                 confidence=c.confidence,
                 crop_url=f"/api/captures/{c.id}/image?type=crop",
-                annotated_url=f"/api/captures/{c.id}/image?type=annotated",
+                annotated_url=f"/api/captures/{c.id}/image?type=annotated" if c.annotated_path else None,
                 kind=c.kind or "appearance",
+                target=c.target or "person",
             )
             for c in captures
         ]
@@ -70,8 +75,10 @@ def create_results_router() -> APIRouter:
             raise HTTPException(404, "Job not found")
 
         events = await event_repo.list_by_job(job_id)
-        captures = await capture_repo.list_by_job(job_id)
-        # captures.segment_index is the 1-based event ordinal (enter-time order)
+        captures = await capture_repo.list_by_job(job_id, target="vehicle")
+        # captures.segment_index is the 1-based event ordinal (enter-time order);
+        # target='vehicle' keeps person-segment captures from colliding on
+        # 'both' jobs where both count from 1.
         by_slot = {
             (c.segment_index, c.kind or "appearance"): c
             for c in captures

@@ -74,6 +74,7 @@ class CaptureResponse(BaseModel):
     crop_url: str
     annotated_url: str | None = None
     kind: str = "appearance"
+    target: str = "person"
 
 
 class VehicleEventResponse(BaseModel):

@@ -59,16 +59,20 @@ class CaptureSaver:
     def save_vehicle_event(
         self, event: VehicleEventData, recognizer=None
     ) -> tuple[list[CaptureResult], PlateResult | None]:
-        """Save a vehicle's three captures: appearance, departure, plate.
+        """Save a vehicle's captures: appearance, departure, plate.
 
         Appearance/departure crop the vehicle box and annotate the full
-        frame. The plate capture crops the largest-box-area frame's vehicle
-        region and, when a recognizer is provided, the plate inside it;
-        recognition failure keeps the image and leaves the number empty.
+        frame; a single-detection event skips the departure image instead of
+        writing a duplicate. The plate capture tries every large-area
+        candidate frame through the recognizer and keeps the read with the
+        highest confidence; recognition failure keeps the image from the
+        largest frame and leaves the number empty.
         """
         results: list[CaptureResult] = []
         enter = event.enter_candidate
-        exit = event.exit_candidate or event.enter_candidate
+        # None on single-detection events: an identical second image helps no
+        # one, the plate shot covers that frame.
+        exit = event.exit_candidate
         for kind, cand in (("appearance", enter), ("departure", exit)):
             if cand is None:
                 continue
@@ -84,20 +88,31 @@ class CaptureSaver:
                     crop_path=str(crop_paths[0]) if crop_paths else "",
                     annotated_path=str(annotated_path),
                     kind=kind,
+                    target="vehicle",
                 )
             )
 
         plate_result: PlateResult | None = None
-        plate_cand = event.plate_candidate or enter
+        plate_cand = event.plate_candidates[0] if event.plate_candidates else enter
         if plate_cand is not None:
             base = f"evt{event.ordinal}_plate_{plate_cand.timestamp:.1f}s"
             vehicle_crop = _crop_first_box(plate_cand.image, plate_cand.boxes)
             if vehicle_crop is not None:
                 plate_path = self._output_dir / f"{base}.jpg"
+                # Try every large-area frame; distant/angled plates often read
+                # on only one of them. Best confidence wins.
                 if recognizer is not None:
-                    plate_result = recognizer.recognize(vehicle_crop)
-                    if plate_result is not None and plate_result.plate_box is not None:
-                        vehicle_crop = _crop_with_margin(vehicle_crop, plate_result.plate_box)
+                    for cand in event.plate_candidates or [plate_cand]:
+                        crop = _crop_first_box(cand.image, cand.boxes)
+                        if crop is None:
+                            continue
+                        attempt = recognizer.recognize(crop)
+                        if attempt is not None and (
+                            plate_result is None or attempt.confidence > plate_result.confidence
+                        ):
+                            plate_result = attempt
+                if plate_result is not None and plate_result.plate_box is not None:
+                    vehicle_crop = _crop_with_margin(vehicle_crop, plate_result.plate_box)
                 cv2.imwrite(str(plate_path), vehicle_crop)
                 results.append(
                     CaptureResult(
@@ -107,6 +122,7 @@ class CaptureSaver:
                         crop_path=str(plate_path),
                         annotated_path="",
                         kind="plate",
+                        target="vehicle",
                     )
                 )
         return results, plate_result

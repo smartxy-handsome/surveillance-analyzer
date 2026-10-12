@@ -399,9 +399,20 @@ async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
             )
         ],
     )
+    # A person-segment capture sharing (segment_index=1, kind='appearance')
+    # with the vehicle event: the target namespace must keep them apart.
     await client.test_app.state.capture_repo.bulk_create(
         job_id,
         [
+            CaptureCreate(
+                segment_index=1,
+                timestamp=9.0,
+                confidence=0.8,
+                crop_path="C:\captures\person_seg1.jpg",
+                annotated_path="C:\captures\person_seg1_ann.jpg",
+                kind="appearance",
+                target="person",
+            ),
             CaptureCreate(
                 segment_index=1,
                 timestamp=10.0,
@@ -409,6 +420,7 @@ async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
                 crop_path="C:\captures\enter.jpg",
                 annotated_path="C:\captures\enter_ann.jpg",
                 kind="appearance",
+                target="vehicle",
             ),
             CaptureCreate(
                 segment_index=1,
@@ -417,6 +429,7 @@ async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
                 crop_path="C:\captures\exit.jpg",
                 annotated_path="C:\captures\exit_ann.jpg",
                 kind="departure",
+                target="vehicle",
             ),
             CaptureCreate(
                 segment_index=1,
@@ -425,6 +438,7 @@ async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
                 crop_path="C:\captures\plate.jpg",
                 annotated_path="",
                 kind="plate",
+                target="vehicle",
             ),
         ],
     )
@@ -438,6 +452,47 @@ async def test_vehicle_events_endpoint_roundtrip(client, tmp_path):
     assert ev["plate_number"] == "京A12345"
     assert ev["plate_type"] == "blue"
     assert ev["enter_capture"]["kind"] == "appearance"
+    # The person capture at the same (ordinal, kind) slot must not leak in
+    assert ev["enter_capture"]["timestamp"] == 10.0
     assert ev["plate_capture"]["kind"] == "plate"
     # plate capture has no annotated image
     assert ev["plate_capture"]["annotated_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_captures_filters_by_target(client, tmp_path):
+    """target query param splits the person/vehicle capture namespaces."""
+    from src.storage.repository import CaptureCreate, JobCreate
+
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"\x00" * 100)
+    job_id = "tfilter-1"
+    await client.test_app.state.job_repo.create(
+        JobCreate(
+            id=job_id,
+            filename="v.mp4",
+            file_path=str(video.resolve()),
+            detection_target="both",
+            sampling_fps=3.0,
+            model_name="yolov8m.pt",
+            confidence_threshold=0.3,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+    await client.test_app.state.capture_repo.bulk_create(
+        job_id,
+        [
+            CaptureCreate(segment_index=1, timestamp=1.0, confidence=0.9, crop_path="p.jpg", annotated_path="pa.jpg", kind="appearance", target="person"),
+            CaptureCreate(segment_index=1, timestamp=2.0, confidence=0.9, crop_path="v.jpg", annotated_path="", kind="plate", target="vehicle"),
+        ],
+    )
+
+    all_c = await client.get(f"/api/jobs/{job_id}/captures")
+    assert len(all_c.json()) == 2
+
+    person = await client.get(f"/api/jobs/{job_id}/captures", params={"target": "person"})
+    assert [c["target"] for c in person.json()] == ["person"]
+
+    vehicle = await client.get(f"/api/jobs/{job_id}/captures", params={"target": "vehicle"})
+    assert [c["kind"] for c in vehicle.json()] == ["plate"]

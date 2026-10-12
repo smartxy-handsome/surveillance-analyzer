@@ -33,8 +33,8 @@ export const useJobsStore = defineStore('jobs', () => {
     segments.value = await getSegments(jobId)
   }
 
-  async function fetchCaptures(jobId: string) {
-    captures.value = await getCaptures(jobId)
+  async function fetchCaptures(jobId: string, target?: 'person' | 'vehicle') {
+    captures.value = await getCaptures(jobId, target)
   }
 
   async function fetchVehicleEvents(jobId: string) {

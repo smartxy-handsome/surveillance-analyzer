@@ -24,7 +24,9 @@ const showPersonView = computed(
 onMounted(async () => {
   await store.fetchJob(props.jobId)
   await store.fetchSegments(props.jobId)
-  await store.fetchCaptures(props.jobId)
+  // Person gallery must not see vehicle captures: on 'both' jobs both
+  // namespaces number from 1 and would collide in the gallery grouping.
+  await store.fetchCaptures(props.jobId, hasVehicleView.value ? 'person' : undefined)
   if (store.currentJob?.detection_target === 'vehicle' || store.currentJob?.detection_target === 'both') {
     view.value = store.currentJob.detection_target === 'vehicle' ? 'vehicle' : 'person'
     await store.fetchVehicleEvents(props.jobId)
@@ -34,7 +36,10 @@ onMounted(async () => {
     polling.value = setInterval(async () => {
       await store.fetchJob(props.jobId)
       await store.fetchSegments(props.jobId)
-      await store.fetchCaptures(props.jobId)
+      await store.fetchCaptures(props.jobId, hasVehicleView.value ? 'person' : undefined)
+      if (hasVehicleView.value) {
+        await store.fetchVehicleEvents(props.jobId)
+      }
       if (
         store.currentJob?.status === 'completed' ||
         store.currentJob?.status === 'failed'
