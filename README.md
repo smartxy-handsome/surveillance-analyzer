@@ -44,7 +44,7 @@ CLI 参数可覆盖配置:`--host`、`--port`、`--dev`(不挂载前端构建产
 | `video` | `supported_formats` / `max_file_size_mb` / `hw_accel` | 允许的容器格式、提交时的文件大小上限;硬件解码(D3D11/DXVA),驱动不支持时自动回退软件解码 |
 | `sampling` | `fps` / `strategy` | 抽帧采样率;采样策略当前仅支持 `uniform` |
 | `detection` | `model_name` / `confidence_threshold` / `device` / `batch_size` / `imgsz` / `half` | YOLOv8 模型、置信度阈值、推理设备(无 CUDA 时自动回退 CPU)、批大小、推理输入尺寸、FP16 推理(仅 CUDA 生效)。默认 `yolov8m@1280` + 阈值 `0.6`:阈值经真实素材人工复核校准(0.6 以下绝大多数为非人体);纯 CPU 可降 `half: false`、`imgsz: 640` 换速度 |
-| `aggregation` | `merge_gap_seconds` / `min_segment_seconds` | 检测合并间隙与最短时间段时长 |
+| `aggregation` | `merge_gap_seconds` / `min_segment_seconds` / `min_detections` / `use_tracking` | 检测合并间隙、最短时间段时长、时间确认(单帧检出不成记录,滤车灯/杆件闪烁)、ByteTrack 身份聚合开关 |
 | `pipeline` | `frame_queue_size` / `num_decode_threads` / `max_concurrent_jobs` | 解码线程数必须为 1(乱序帧会破坏聚合的时序假设);并发任务闸 |
 | `web` | `host` / `port` / `cors_origins` | 监听地址与 CORS |
 

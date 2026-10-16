@@ -146,6 +146,11 @@ class TrackAggregator:
             max_confidence=conf_max,
             source_key=key,
         )
+        # Temporal confirmation first: a single detection is one-frame flicker
+        # (headlight glints, poles in IR night mode) and never becomes a
+        # record, however confident.
+        if count < self._config.min_detections:
+            return
         # Rescue rule: short bursts with a confident peak still produce a
         # record and captures -- a detection the old threshold accepted must
         # never disappear for being brief.

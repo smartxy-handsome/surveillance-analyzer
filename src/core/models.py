@@ -59,6 +59,12 @@ class AggregationConfig:
     # must never vanish without a capture. Noise blips peak lower and stay
     # filtered.
     min_segment_rescue_conf: float = 0.5
+    # Temporal confirmation (user-validated 2026-10-12): single-detection
+    # tracks are single-frame flicker (headlight glints, poles in IR) and are
+    # dropped even when confident. A real presence almost always spans >= 2
+    # sampled frames; the rare genuine one-frame appearance is accepted
+    # collateral. Rescue only applies at or above this count.
+    min_detections: int = 2
     # Group detections by ByteTrack identity instead of frame-level presence:
     # one track = one enter/exit record, so a person briefly lost by the
     # detector mid-walk no longer splits into several sawtooth segments.

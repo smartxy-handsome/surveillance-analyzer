@@ -8,7 +8,8 @@ def test_no_detections():
 
 
 def test_single_detection():
-    agg = SegmentAggregator(AggregationConfig(min_segment_seconds=0.0))
+    # min_detections=1 isolates this test from the temporal confirmation rule
+    agg = SegmentAggregator(AggregationConfig(min_segment_seconds=0.0, min_detections=1))
     agg.accumulate(1.0, True, 0.9)
     segments = agg.finalize()
     assert len(segments) == 1
@@ -40,7 +41,7 @@ def test_merge_gap():
 
 def test_no_merge_large_gap():
     # Gap of 5.0s > merge_gap of 2.0s -> separate segments
-    config = AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.0)
+    config = AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.0, min_detections=1)
     agg = SegmentAggregator(config)
     agg.accumulate(1.0, True, 0.9)
     agg.accumulate(6.0, True, 0.9)

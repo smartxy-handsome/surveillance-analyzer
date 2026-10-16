@@ -131,7 +131,9 @@ def test_pipeline_dropped_frames_end_pipeline_and_counted():
         detector=mock_detector,
         sampling_config=SamplingConfig(fps=1.0),
         detection_config=DetectionConfig(batch_size=1),
-        aggregation_config=AggregationConfig(merge_gap_seconds=2.0, min_segment_seconds=0.0),
+        aggregation_config=AggregationConfig(
+            merge_gap_seconds=2.0, min_segment_seconds=0.0, min_detections=1
+        ),
         pipeline_config=PipelineConfig(frame_queue_size=16, num_decode_threads=1),
     )
 

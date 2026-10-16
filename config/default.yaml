@@ -34,6 +34,9 @@ aggregation:
   # capture just because it was brief. Noise blips peak lower and stay
   # filtered.
   min_segment_rescue_conf: 0.5
+  # Temporal confirmation: single-detection tracks are one-frame flicker
+  # (headlights, poles) and never become records, however confident.
+  min_detections: 2
   # ByteTrack identity grouping: one track = one enter/exit record, so a
   # person briefly lost by the detector mid-walk no longer splits into
   # several sawtooth segments.

@@ -55,6 +55,8 @@ class SegmentAggregator:
                 max_confidence=self._conf_max,
                 source_key=self._current_key,
             )
+            if seg.detection_count < self._config.min_detections:
+                return  # single-frame flicker, however confident
             if seg.duration >= self._config.min_segment_seconds or (
                 seg.max_confidence >= self._config.min_segment_rescue_conf
             ):

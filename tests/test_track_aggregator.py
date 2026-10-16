@@ -51,7 +51,7 @@ def test_untracked_detections_fall_back_to_presence_groups():
 
 
 def test_mixed_tracked_and_untracked_keys_stay_unique():
-    agg = TrackAggregator(make_config(min_segment_seconds=0.0))
+    agg = TrackAggregator(make_config(min_segment_seconds=0.0, min_detections=1))
     agg.accumulate(0.0, True, 0.9, track_id=5)
     agg.accumulate(1.0, True, 0.9)  # anonymous
     segs = agg.finalize()
@@ -99,11 +99,19 @@ def test_short_low_conf_track_still_filtered():
     assert agg.finalize() == []
 
 
-def test_single_frame_at_rescue_threshold_kept():
+def test_single_frame_dropped_even_when_confident():
+    """Temporal confirmation (user-validated 2026-10-12): one detection is
+    one-frame flicker (headlight glints, poles) and never becomes a record."""
     agg = TrackAggregator(make_config())
     agg.accumulate(0.0, True, 0.61, track_id=1)
-    segs = agg.finalize()
-    assert len(segs) == 1
+    assert agg.finalize() == []
+
+
+def test_two_frames_at_rescue_threshold_kept():
+    agg = TrackAggregator(make_config())
+    agg.accumulate(0.0, True, 0.61, track_id=1)
+    agg.accumulate(0.33, True, 0.61, track_id=1)
+    assert len(agg.finalize()) == 1
 
 
 def test_rescue_disabled_when_threshold_above_one():
