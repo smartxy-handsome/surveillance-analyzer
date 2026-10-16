@@ -56,3 +56,32 @@ describe('filterCapturesByMinConfidence', () => {
     expect(filterCapturesByMinConfidence(captures, [seg(0.1)], 0)).toHaveLength(2)
   })
 })
+
+describe('avg mode', () => {
+  // avg <= max always: a record with one strong frame but weak rest
+  const items = [
+    { max_confidence: 0.91, avg_confidence: 0.56 },
+    { max_confidence: 0.95, avg_confidence: 0.92 },
+  ]
+
+  it('max mode keeps both records', () => {
+    expect(filterByMinConfidence(items, 0.9, 'max')).toHaveLength(2)
+  })
+
+  it('avg mode drops the record whose whole body is weak', () => {
+    const kept = filterByMinConfidence(items, 0.9, 'avg')
+    expect(kept.map((s) => s.avg_confidence)).toEqual([0.85])
+  })
+
+  it('capture ordinals follow the selected mode', () => {
+    const segments = [seg(0.91), seg(0.4)]
+    ;(segments[0] as Segment).avg_confidence = 0.56
+    const captures = [cap(1), cap(2)]
+    expect(
+      filterCapturesByMinConfidence(captures, segments, 0.9, 'max').map((c) => c.segment_index)
+    ).toEqual([1])
+    expect(
+      filterCapturesByMinConfidence(captures, segments, 0.9, 'avg')
+    ).toEqual([])
+  })
+})

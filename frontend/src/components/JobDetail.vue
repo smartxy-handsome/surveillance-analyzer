@@ -5,7 +5,7 @@ import SegmentTable from './SegmentTable.vue'
 import TimelineViewer from './TimelineViewer.vue'
 import CaptureGallery from './CaptureGallery.vue'
 import VehicleEventTable from './VehicleEventTable.vue'
-import { filterByMinConfidence, filterCapturesByMinConfidence } from '../utils/confidenceFilter'
+import { filterByMinConfidence, filterCapturesByMinConfidence, type ConfidenceMode } from '../utils/confidenceFilter'
 
 const props = defineProps<{ jobId: string }>()
 const store = useJobsStore()
@@ -16,18 +16,21 @@ const progressPercent = computed(() => store.currentJob?.progress?.percent ?? 0)
 const view = ref<'person' | 'vehicle'>('person')
 
 // User-selected confidence floor (percent, 0 = show all). Applies live to
-// the person table/timeline/gallery and the vehicle event table.
+// the person table/timeline/gallery and the vehicle event table. The mode
+// picks the aggregate: 'max' = at least one strong frame, 'avg' = whole
+// record strong.
 const minConfPct = ref(0)
+const confMode = ref<ConfidenceMode>('max')
 const minConf = computed(() => minConfPct.value / 100)
 
 const filteredSegments = computed(() =>
-  filterByMinConfidence(store.segments, minConf.value)
+  filterByMinConfidence(store.segments, minConf.value, confMode.value)
 )
 const filteredCaptures = computed(() =>
-  filterCapturesByMinConfidence(store.captures, store.segments, minConf.value)
+  filterCapturesByMinConfidence(store.captures, store.segments, minConf.value, confMode.value)
 )
 const filteredEvents = computed(() =>
-  filterByMinConfidence(store.vehicleEvents, minConf.value)
+  filterByMinConfidence(store.vehicleEvents, minConf.value, confMode.value)
 )
 const visibleCount = computed(() =>
   showPersonView.value ? filteredSegments.value.length : filteredEvents.value.length
@@ -159,6 +162,18 @@ function getStatusText(status: string): string {
       class="conf-filter"
     >
       <span class="conf-label">置信度下限</span>
+      <span class="conf-mode" role="radiogroup" aria-label="置信度口径">
+        <button
+          :class="{ active: confMode === 'max' }"
+          title="按记录里最好一帧的分数过滤"
+          @click="confMode = 'max'"
+        >按最高</button>
+        <button
+          :class="{ active: confMode === 'avg' }"
+          title="按整条记录所有帧的平均分过滤（更严格）"
+          @click="confMode = 'avg'"
+        >按平均</button>
+      </span>
       <input
         type="range"
         min="0"
@@ -368,6 +383,29 @@ h3 .icon {
 .conf-label {
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.conf-mode {
+  display: inline-flex;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.conf-mode button {
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-secondary);
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.conf-mode button.active {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent-blue);
+  font-weight: 600;
 }
 
 .conf-slider {
