@@ -70,7 +70,7 @@ describe('avg mode', () => {
 
   it('avg mode drops the record whose whole body is weak', () => {
     const kept = filterByMinConfidence(items, 0.9, 'avg')
-    expect(kept.map((s) => s.avg_confidence)).toEqual([0.85])
+    expect(kept.map((s) => s.avg_confidence)).toEqual([0.92])
   })
 
   it('capture ordinals follow the selected mode', () => {
