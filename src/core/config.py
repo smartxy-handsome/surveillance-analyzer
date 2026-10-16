@@ -23,7 +23,9 @@ def load_config(yaml_path: str | Path) -> AppConfig:
     yaml_path = Path(yaml_path)
     data: dict = {}
     if yaml_path.exists():
-        with open(yaml_path) as f:
+        # Config files are UTF-8 by convention; the locale default would be
+        # GBK on Chinese-locale Windows and choke on UTF-8 comments.
+        with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
     def _section(name: str) -> dict:
