@@ -15,6 +15,7 @@ class YOLOv8Detector(DetectionEngine):
         batch_size: int = 8,
         imgsz: int = 1280,
         use_tracker: bool = False,
+        half: bool = False,
     ):
         self._model_name = model_name
         self._requested_device = device
@@ -24,6 +25,7 @@ class YOLOv8Detector(DetectionEngine):
         self._batch_size = batch_size
         self._imgsz = imgsz
         self._use_tracker = use_tracker
+        self._half = half
         self._model: YOLO | None = None
 
     def load(self) -> None:
@@ -48,6 +50,9 @@ class YOLOv8Detector(DetectionEngine):
             imgsz=self._imgsz,
             verbose=False,
         )
+        # FP16 is CUDA-only; ultralytics rejects/misbehaves on CPU half.
+        if self._half and torch.cuda.is_available():
+            kwargs["half"] = True
         if self._use_tracker:
             # persist=True keeps tracker state across calls so identities
             # survive between batches; frames within a batch are processed
