@@ -5,6 +5,7 @@ import SegmentTable from './SegmentTable.vue'
 import TimelineViewer from './TimelineViewer.vue'
 import CaptureGallery from './CaptureGallery.vue'
 import VehicleEventTable from './VehicleEventTable.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 import { filterByMinConfidence, filterCapturesByMinConfidence, type ConfidenceMode } from '../utils/confidenceFilter'
 
 const props = defineProps<{ jobId: string }>()
@@ -197,11 +198,13 @@ function getStatusText(status: string): string {
         :total-duration="store.currentJob.video_metadata?.duration || 0"
       />
 
-      <h3>
-        <span class="icon">📋</span>
-        时间段 ({{ filteredSegments.length }})
-      </h3>
-      <SegmentTable :segments="filteredSegments" />
+      <CollapsibleSection storage-key="segments" title="时间段">
+        <template #header>
+          <span class="icon">📋</span>
+          时间段 ({{ filteredSegments.length }})
+        </template>
+        <SegmentTable :segments="filteredSegments" />
+      </CollapsibleSection>
 
       <CaptureGallery
         v-if="filteredCaptures.length > 0"
@@ -221,19 +224,21 @@ function getStatusText(status: string): string {
     </div>
 
     <div v-if="!showPersonView" class="vehicle-section">
-      <h3>
-        <span class="icon">🚗</span>
-        车辆事件 ({{ filteredEvents.length }})
-      </h3>
-      <VehicleEventTable v-if="filteredEvents.length > 0" :events="filteredEvents" />
-      <div v-else class="empty">
-        <span class="empty-icon">🚗</span>
-        {{
-          minConfPct > 0
-            ? '当前置信度过滤下没有车辆记录，请调低阈值。'
-            : '未识别到车辆。'
-        }}
-      </div>
+      <CollapsibleSection storage-key="vehicle-events" title="车辆事件">
+        <template #header>
+          <span class="icon">🚗</span>
+          车辆事件 ({{ filteredEvents.length }})
+        </template>
+        <VehicleEventTable v-if="filteredEvents.length > 0" :events="filteredEvents" />
+        <div v-if="filteredEvents.length === 0" class="empty">
+          <span class="empty-icon">🚗</span>
+          {{
+            minConfPct > 0
+              ? '当前置信度过滤下没有车辆记录，请调低阈值。'
+              : '未识别到车辆。'
+          }}
+        </div>
+      </CollapsibleSection>
     </div>
 
     <div v-if="store.currentJob.status === 'failed'" class="error">
