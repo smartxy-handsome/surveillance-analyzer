@@ -5,6 +5,7 @@ import SegmentTable from './SegmentTable.vue'
 import TimelineViewer from './TimelineViewer.vue'
 import CaptureGallery from './CaptureGallery.vue'
 import VehicleEventTable from './VehicleEventTable.vue'
+import { filterByMinConfidence, filterCapturesByMinConfidence } from '../utils/confidenceFilter'
 
 const props = defineProps<{ jobId: string }>()
 const store = useJobsStore()
@@ -13,6 +14,30 @@ const progressPercent = computed(() => store.currentJob?.progress?.percent ?? 0)
 
 // Which result pane to show; only reachable for target 'both'.
 const view = ref<'person' | 'vehicle'>('person')
+
+// User-selected confidence floor (percent, 0 = show all). Applies live to
+// the person table/timeline/gallery and the vehicle event table.
+const minConfPct = ref(0)
+const minConf = computed(() => minConfPct.value / 100)
+
+const filteredSegments = computed(() =>
+  filterByMinConfidence(store.segments, minConf.value)
+)
+const filteredCaptures = computed(() =>
+  filterCapturesByMinConfidence(store.captures, store.segments, minConf.value)
+)
+const filteredEvents = computed(() =>
+  filterByMinConfidence(store.vehicleEvents, minConf.value)
+)
+const visibleCount = computed(() =>
+  showPersonView.value ? filteredSegments.value.length : filteredEvents.value.length
+)
+const totalCount = computed(() =>
+  showPersonView.value ? store.segments.length : store.vehicleEvents.length
+)
+const hasAnyResults = computed(
+  () => store.segments.length > 0 || store.vehicleEvents.length > 0
+)
 
 const hasVehicleView = computed(
   () => store.currentJob?.detection_target === 'vehicle' || store.currentJob?.detection_target === 'both'
@@ -129,25 +154,43 @@ function getStatusText(status: string): string {
       <button :class="{ active: view === 'vehicle' }" @click="view = 'vehicle'">🚗 车辆结果</button>
     </div>
 
-    <div v-if="showPersonView && store.segments.length > 0">
+    <div
+      v-if="store.currentJob.status === 'completed' && hasAnyResults"
+      class="conf-filter"
+    >
+      <span class="conf-label">置信度下限</span>
+      <input
+        type="range"
+        min="0"
+        max="95"
+        step="5"
+        v-model.number="minConfPct"
+        class="conf-slider"
+      />
+      <strong class="conf-value">{{ minConfPct === 0 ? '全部' : `≥ ${minConfPct}%` }}</strong>
+      <span class="conf-count">显示 {{ visibleCount }} / {{ totalCount }} 条</span>
+      <button v-if="minConfPct > 0" class="conf-clear" @click="minConfPct = 0">清除</button>
+    </div>
+
+    <div v-if="showPersonView && filteredSegments.length > 0">
       <h3>
         <span class="icon">📊</span>
         时间轴
       </h3>
       <TimelineViewer
-        :segments="store.segments"
+        :segments="filteredSegments"
         :total-duration="store.currentJob.video_metadata?.duration || 0"
       />
 
       <h3>
         <span class="icon">📋</span>
-        时间段 ({{ store.segments.length }})
+        时间段 ({{ filteredSegments.length }})
       </h3>
-      <SegmentTable :segments="store.segments" />
+      <SegmentTable :segments="filteredSegments" />
 
       <CaptureGallery
-        v-if="store.captures.length > 0"
-        :captures="store.captures"
+        v-if="filteredCaptures.length > 0"
+        :captures="filteredCaptures"
       />
     </div>
     <div
@@ -155,15 +198,27 @@ function getStatusText(status: string): string {
       class="empty"
     >
       <span class="empty-icon">✅</span>
-      该视频中未检测到人员。
+      {{
+        minConfPct > 0
+          ? '当前置信度过滤下没有记录，请调低阈值。'
+          : '该视频中未检测到人员。'
+      }}
     </div>
 
     <div v-if="!showPersonView" class="vehicle-section">
       <h3>
         <span class="icon">🚗</span>
-        车辆事件 ({{ store.vehicleEvents.length }})
+        车辆事件 ({{ filteredEvents.length }})
       </h3>
-      <VehicleEventTable :events="store.vehicleEvents" />
+      <VehicleEventTable v-if="filteredEvents.length > 0" :events="filteredEvents" />
+      <div v-else class="empty">
+        <span class="empty-icon">🚗</span>
+        {{
+          minConfPct > 0
+            ? '当前置信度过滤下没有车辆记录，请调低阈值。'
+            : '未识别到车辆。'
+        }}
+      </div>
     </div>
 
     <div v-if="store.currentJob.status === 'failed'" class="error">
@@ -296,6 +351,55 @@ h3 .icon {
   border-color: var(--accent-blue);
   color: var(--accent-blue);
   font-weight: 600;
+}
+
+.conf-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.conf-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.conf-slider {
+  flex: 0 1 260px;
+  accent-color: var(--accent-blue);
+}
+
+.conf-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  min-width: 64px;
+}
+
+.conf-count {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.conf-clear {
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.conf-clear:hover {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
 }
 
 .vehicle-section h3 {
