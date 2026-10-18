@@ -10,13 +10,16 @@ sampling:
   strategy: "uniform"
 
 detection:
-  # yolov8m@1280 on real night footage: 2.5x more confirmed records and 40%
-  # fewer suspected ones vs yolov8s@1280, at ~1.2x wall time. Drop to
-  # yolov8s/yolov8n or lower imgsz on CPU-only machines or close-up cameras.
-  model_name: "yolov8m.pt"
-  # User-validated on real night footage: detections below 0.6 were
-  # overwhelmingly non-persons. Raise/lower here, not in code.
-  confidence_threshold: 0.6
+  # yolov8m-night-v1: fine-tuned on user-reviewed night footage (524 frames:
+  # 330 real-person positives, 194 user-marked false positives as hard
+  # negatives). On the labeled frames it cuts capture-level false positives
+  # 57.7% -> 17% at HIGHER recall than the COCO model ever reached.
+  # Re-run scripts/export_finetune.py after new review rounds to retrain.
+  model_name: "yolov8m-night-v1.pt"
+  # 0.35 is the sweep-validated operating point for night-v1 (threshold
+  # sweep on labeled frames): 97.3% recall / 17% FP. The old COCO-model
+  # line (0.6) left recall on the floor for this model.
+  confidence_threshold: 0.35
   # FP16 on CUDA: +70% throughput, identical detections. No-op on CPU.
   half: true
   device: "cuda:0"

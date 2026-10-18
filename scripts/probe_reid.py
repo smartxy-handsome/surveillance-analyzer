@@ -7,7 +7,6 @@ src/detection/trackers/botsort-reid.yaml and to re-tune it later.
 Usage: uv run python scripts/probe_reid.py [start_min] [end_min]
 """
 
-import sys
 import time
 
 from src.core.models import (
@@ -35,12 +34,12 @@ def overlap_pairs(segments) -> int:
     return pairs
 
 
-def run(use_reid: bool, indices: list[int], fps: float) -> None:
+def run(use_reid: bool, indices: list[int], fps: float, model_name: str, conf: float) -> None:
     detector = YOLOv8Detector(
-        model_name="yolov8m.pt",
+        model_name=model_name,
         device="cuda:0",
         target_classes=[0],
-        confidence_threshold=0.6,
+        confidence_threshold=conf,
         imgsz=1280,
         use_tracker=True,
         half=True,
@@ -74,8 +73,17 @@ def run(use_reid: bool, indices: list[int], fps: float) -> None:
 
 
 def main() -> None:
-    start_min = float(sys.argv[1]) if len(sys.argv) > 1 else 10.0
-    end_min = float(sys.argv[2]) if len(sys.argv) > 2 else 20.0
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("start_min", nargs="?", type=float, default=10.0)
+    parser.add_argument("end_min", nargs="?", type=float, default=20.0)
+    parser.add_argument("--model", default="yolov8m.pt")
+    parser.add_argument("--conf", type=float, default=0.6)
+    parser.add_argument("--no-reid", action="store_true")
+    args = parser.parse_args()
+    start_min, end_min = args.start_min, args.end_min
+    model_name, conf, use_reid = args.model, args.conf, not args.no_reid
 
     reader = OpenCVFrameReader(hw_accel=True)
     meta = reader.open(VIDEO)
@@ -86,8 +94,7 @@ def main() -> None:
     ]
     print(f"probe window: {start_min}-{end_min} min, {len(indices)} sampled frames")
 
-    run(False, indices, meta.fps)
-    run(True, indices, meta.fps)
+    run(use_reid, indices, meta.fps, model_name, conf)
 
 
 if __name__ == "__main__":

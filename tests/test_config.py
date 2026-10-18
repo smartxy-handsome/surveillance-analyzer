@@ -7,7 +7,8 @@ from src.core.config import load_config
 def test_load_default_config(tmp_path):
     config = load_config(tmp_path / "nonexistent.yaml")
     assert config.sampling.fps == 3.0
-    assert config.detection.confidence_threshold == 0.6
+    assert config.detection.model_name == "yolov8m-night-v1.pt"
+    assert config.detection.confidence_threshold == 0.35
     assert config.detection.half is True
     assert config.detection.device == "cuda:0"
     assert config.aggregation.use_tracking is True
@@ -82,8 +83,9 @@ def test_auth_defaults_off():
 
 
 def test_detection_defaults_tuned_for_surveillance():
-    """yolov8m@1280: 2.5x more confirmed records vs yolov8s@1280 on night footage."""
+    """Fine-tuned night-v1 weights at the sweep-validated 0.35 line."""
     config = load_config(Path("config/default.yaml"))
-    assert config.detection.model_name == "yolov8m.pt"
+    assert config.detection.model_name == "yolov8m-night-v1.pt"
+    assert config.detection.confidence_threshold == 0.35
     assert config.detection.imgsz == 1280
     assert config.video.hw_accel is True

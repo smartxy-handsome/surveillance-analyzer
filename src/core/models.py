@@ -28,16 +28,15 @@ class SamplingConfig:
 
 @dataclass
 class DetectionConfig:
-    # yolov8m@1280 on real night surveillance footage: 2.5x more confirmed
-    # (peak conf >= 0.5) records and 40% fewer suspected ones than yolov8s,
-    # at ~1.2x wall time (inference 54fps, still decode-adjacent). yolov8s@640
-    # found 2.3x more than yolov8n@640 — upgrade when GPU headroom allows.
-    model_name: str = "yolov8m.pt"
-    # 0.6 is the user-validated line for real night surveillance footage:
-    # reviewed detections below it were overwhelmingly NOT persons. Recall
-    # at this line is 2.5x the old yolov8n@640 baseline. Revisit once a
-    # labeled evaluation baseline exists.
-    confidence_threshold: float = 0.6
+    # Fine-tuned on user-reviewed night footage (scripts/export_finetune.py,
+    # 330 person positives + 194 user-marked FPs): capture-level FP on the
+    # labeled frames drops 57.7% -> 17% while recall RISES vs the COCO
+    # baseline. Fall back to "yolov8m.pt" + 0.6 if no fine-tuned weights.
+    model_name: str = "yolov8m-night-v1.pt"
+    # Sweep-validated operating point for night-v1 on the labeled frames:
+    # 97.3% recall / 17% FP. The COCO-model line (0.6) was calibrated for
+    # different confidence distribution and left recall on the floor here.
+    confidence_threshold: float = 0.35
     # FP16 inference on CUDA: measured +70% throughput with identical
     # detections at imgsz 1280. Ignored automatically on CPU.
     half: bool = True
