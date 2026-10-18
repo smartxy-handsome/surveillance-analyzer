@@ -37,6 +37,8 @@ from src.storage.database import Base
 from src.storage.repository import (
     CaptureRepository,
     JobRepository,
+    MissedEventRepository,
+    ReviewMarkRepository,
     SegmentRepository,
     VehicleEventRepository,
 )
@@ -160,6 +162,8 @@ async def e2e_client(tmp_path):
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
     app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
+    app.state.review_repo = ReviewMarkRepository(session_factory)
+    app.state.missed_event_repo = MissedEventRepository(session_factory)
     app.state.session_factory = session_factory
     import asyncio
 
