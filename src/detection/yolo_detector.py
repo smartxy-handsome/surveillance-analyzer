@@ -1,8 +1,15 @@
+from pathlib import Path
+
 import numpy as np
 import torch
 from ultralytics import YOLO
 
 from src.core.interfaces import DetectionEngine, FrameDetection
+
+# Custom BoT-SORT config with appearance ReID enabled; passed to
+# model.track(tracker=...) when use_reid is set. Falls back to
+# ultralytics' built-in botsort.yaml when the file is missing.
+REID_TRACKER_YAML = Path(__file__).parent / "trackers" / "botsort-reid.yaml"
 
 
 class YOLOv8Detector(DetectionEngine):
@@ -16,6 +23,7 @@ class YOLOv8Detector(DetectionEngine):
         imgsz: int = 1280,
         use_tracker: bool = False,
         half: bool = False,
+        use_reid: bool = False,
     ):
         self._model_name = model_name
         self._requested_device = device
@@ -26,6 +34,7 @@ class YOLOv8Detector(DetectionEngine):
         self._imgsz = imgsz
         self._use_tracker = use_tracker
         self._half = half
+        self._use_reid = use_reid
         self._model: YOLO | None = None
 
     def load(self) -> None:
@@ -51,13 +60,16 @@ class YOLOv8Detector(DetectionEngine):
             verbose=False,
         )
         # FP16 is CUDA-only; ultralytics rejects/misbehaves on CPU half.
+        # ultralytics >=8.4.182 renamed the half flag to quantize=16.
         if self._half and torch.cuda.is_available():
-            kwargs["half"] = True
+            kwargs["quantize"] = 16
         if self._use_tracker:
             # persist=True keeps tracker state across calls so identities
             # survive between batches; frames within a batch are processed
             # in order.
             kwargs["persist"] = True
+            if self._use_reid and Path(REID_TRACKER_YAML).exists():
+                kwargs["tracker"] = REID_TRACKER_YAML
         results = infer(source=frames, **kwargs)
 
         detections: list[FrameDetection] = []

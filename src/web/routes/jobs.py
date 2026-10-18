@@ -316,6 +316,7 @@ async def _run_analysis(job_id: str, app, detector_factory=None):
                     imgsz=config.detection.imgsz,
                     use_tracker=config.aggregation.use_tracking,
                     half=config.detection.half,
+                    use_reid=config.detection.use_reid,
                 )
 
             detector = detector_factory()

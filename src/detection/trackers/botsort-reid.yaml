@@ -1,0 +1,25 @@
+# BoT-SORT with appearance ReID, tuned for this project's fixed-camera
+# surveillance footage sampled at 3fps (not the native frame rate), where
+# inter-frame displacement is large and night IR appearance is noisy.
+# Passed to model.track(tracker=...) when detection.use_reid is on.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+# 90 sampled frames = ~30s re-association window at 3fps (default 30 =
+# ~10s): keeps a track alive through detector dropouts and short occlusions.
+track_buffer: 90
+match_thresh: 0.8
+fuse_score: True
+# Fixed camera: global motion compensation is wasted work here.
+gmc_method: none
+# 3fps sampling moves a walking person far between samples; the default
+# 0.5 IoU gate would refuse ReID matching almost every frame.
+proximity_thresh: 0.3
+# Night IR appearance is noisy — keep matching strict to avoid merging
+# different people into one track.
+appearance_thresh: 0.8
+with_reid: True
+# "auto" extracts features from the YOLO detect head itself; no extra
+# ReID model is downloaded for yolov8-style models.
+model: auto

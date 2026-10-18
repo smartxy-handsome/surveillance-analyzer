@@ -23,6 +23,11 @@ detection:
   target_classes: [0]
   batch_size: 8
   imgsz: 1280
+  # BoT-SORT appearance ReID: re-associates detections with existing tracks
+  # by appearance similarity, cutting same-person ID-switch duplicates.
+  # Uses the detector's own features, no extra model download. Tuning lives
+  # in src/detection/trackers/botsort-reid.yaml.
+  use_reid: true
 
 aggregation:
   # Only used by the non-tracking fallback path; with use_tracking on,

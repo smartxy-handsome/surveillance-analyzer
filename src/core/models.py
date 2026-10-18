@@ -47,6 +47,11 @@ class DetectionConfig:
     # Inference input size. Lower (640) on CPU-only machines or close-up
     # cameras; higher finds smaller subjects at ~4x the compute.
     imgsz: int = 1280
+    # BoT-SORT appearance ReID: re-associates detections with existing
+    # tracks by appearance, cutting same-person ID-switch duplicates.
+    # Uses the detector's own features — no extra model. Tuning lives in
+    # src/detection/trackers/botsort-reid.yaml.
+    use_reid: bool = True
 
 
 @dataclass
