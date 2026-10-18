@@ -46,7 +46,11 @@ function getStatusText(status: string): string {
             <th>文件名</th>
             <th>状态</th>
             <th>时间段</th>
-            <th>有人时长</th>
+            <th
+              title="所有记录的有人时长之和。同一人多次进出会分别累计；两人同时在画时按 2 倍速计。人物识别+车辆识别模式下仅统计人体记录。"
+            >
+              有人时长
+            </th>
             <th>操作</th>
           </tr>
         </thead>
