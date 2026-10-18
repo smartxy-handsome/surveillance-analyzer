@@ -6,6 +6,7 @@ import TimelineViewer from './TimelineViewer.vue'
 import CaptureGallery from './CaptureGallery.vue'
 import VehicleEventTable from './VehicleEventTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
+import MissedEvents from './MissedEvents.vue'
 import { filterByMinConfidence, filterCapturesByMinConfidence, type ConfidenceMode } from '../utils/confidenceFilter'
 
 const props = defineProps<{ jobId: string }>()
@@ -43,6 +44,14 @@ const hasAnyResults = computed(
   () => store.segments.length > 0 || store.vehicleEvents.length > 0
 )
 
+const reviewTotal = computed(
+  () => store.segments.length + store.captures.length + store.vehicleEvents.length
+)
+const reviewProgress = computed(() => {
+  if (reviewTotal.value === 0) return ''
+  return `已复核 ${store.reviewedCount} / ${reviewTotal.value}`
+})
+
 const hasVehicleView = computed(
   () => store.currentJob?.detection_target === 'vehicle' || store.currentJob?.detection_target === 'both'
 )
@@ -60,6 +69,8 @@ onMounted(async () => {
     view.value = store.currentJob.detection_target === 'vehicle' ? 'vehicle' : 'person'
     await store.fetchVehicleEvents(props.jobId)
   }
+  await store.fetchReviews(props.jobId)
+  await store.fetchMissedEvents(props.jobId)
 
   if (store.currentJob?.status === 'processing' || store.currentJob?.status === 'pending') {
     polling.value = setInterval(async () => {
@@ -188,6 +199,10 @@ function getStatusText(status: string): string {
       <button v-if="minConfPct > 0" class="conf-clear" @click="minConfPct = 0">清除</button>
     </div>
 
+    <div v-if="reviewProgress" class="review-progress">
+      <span class="icon">🧐</span> 人工复核：{{ reviewProgress }}
+    </div>
+
     <div v-if="showPersonView && filteredSegments.length > 0">
       <h3>
         <span class="icon">📊</span>
@@ -203,13 +218,16 @@ function getStatusText(status: string): string {
           <span class="icon">📋</span>
           时间段 ({{ filteredSegments.length }})
         </template>
-        <SegmentTable :segments="filteredSegments" />
+        <SegmentTable :segments="filteredSegments" :job-id="jobId" />
       </CollapsibleSection>
 
       <CaptureGallery
         v-if="filteredCaptures.length > 0"
         :captures="filteredCaptures"
+        :job-id="jobId"
       />
+
+      <MissedEvents v-if="store.currentJob.status === 'completed'" :job-id="jobId" />
     </div>
     <div
       v-else-if="showPersonView && store.currentJob.status === 'completed'"
@@ -234,7 +252,11 @@ function getStatusText(status: string): string {
           <span class="icon">🚗</span>
           车辆事件 ({{ filteredEvents.length }})
         </template>
-        <VehicleEventTable v-if="filteredEvents.length > 0" :events="filteredEvents" />
+        <VehicleEventTable
+          v-if="filteredEvents.length > 0"
+          :events="filteredEvents"
+          :job-id="jobId"
+        />
         <div v-if="filteredEvents.length === 0" class="empty">
           <span class="empty-icon">🚗</span>
           {{
@@ -533,5 +555,13 @@ h3 .icon {
   .meta {
     flex-direction: column;
   }
+}
+.review-progress {
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 </style>

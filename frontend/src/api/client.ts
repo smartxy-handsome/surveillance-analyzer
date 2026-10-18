@@ -184,3 +184,69 @@ export async function getSystemPaths(): Promise<SystemPathsResult> {
   const { data } = await api.get<SystemPathsResult>('/system/paths')
   return data
 }
+
+
+export type ReviewTargetType = 'capture' | 'segment' | 'vehicle_event'
+export type ReviewVerdict = 'good' | 'bad'
+
+export interface ReviewMark {
+  target_type: ReviewTargetType
+  target_id: number
+  verdict: ReviewVerdict
+}
+
+export interface MissedEvent {
+  id: number
+  start_seconds: number
+  end_seconds: number
+  note: string | null
+}
+
+export async function getReviews(jobId: string): Promise<ReviewMark[]> {
+  const { data } = await api.get<ReviewMark[]>(`/jobs/${jobId}/reviews`)
+  return data
+}
+
+export async function putReview(
+  jobId: string,
+  targetType: ReviewTargetType,
+  targetId: number,
+  verdict: ReviewVerdict
+): Promise<void> {
+  await api.put(`/jobs/${jobId}/reviews`, {
+    target_type: targetType,
+    target_id: targetId,
+    verdict,
+  })
+}
+
+export async function deleteReview(
+  jobId: string,
+  targetType: ReviewTargetType,
+  targetId: number
+): Promise<void> {
+  await api.delete(`/jobs/${jobId}/reviews/${targetType}/${targetId}`)
+}
+
+export async function getMissedEvents(jobId: string): Promise<MissedEvent[]> {
+  const { data } = await api.get<MissedEvent[]>(`/jobs/${jobId}/missed-events`)
+  return data
+}
+
+export async function addMissedEvent(
+  jobId: string,
+  startSeconds: number,
+  endSeconds: number,
+  note?: string | null
+): Promise<MissedEvent> {
+  const { data } = await api.post<MissedEvent>(`/jobs/${jobId}/missed-events`, {
+    start_seconds: startSeconds,
+    end_seconds: endSeconds,
+    note: note ?? null,
+  })
+  return data
+}
+
+export async function deleteMissedEvent(jobId: string, eventId: number): Promise<void> {
+  await api.delete(`/jobs/${jobId}/missed-events/${eventId}`)
+}

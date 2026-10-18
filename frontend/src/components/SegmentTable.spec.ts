@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import SegmentTable from './SegmentTable.vue'
 import type { Segment } from '../api/client'
+
+const mountTable = (props: { segments: Segment[] }) =>
+  mount(SegmentTable, {
+    props: { jobId: 'job-1', ...props },
+    global: { plugins: [createPinia()] },
+  })
 
 function seg(overrides: Partial<Segment>): Segment {
   return {
@@ -29,13 +36,13 @@ describe('SegmentTable confidence tiers', () => {
   ]
 
   it('tags each row 确认 or 疑似 by peak confidence', () => {
-    const wrapper = mount(SegmentTable, { props: { segments } })
+    const wrapper = mountTable({ segments })
     const tiers = rows(wrapper).map((r) => r.find('.tier-badge').text())
     expect(tiers).toEqual(['确认', '疑似', '确认'])
   })
 
   it('shows the suspected toggle with a count and hides suspected rows when off', async () => {
-    const wrapper = mount(SegmentTable, { props: { segments } })
+    const wrapper = mountTable({ segments })
     expect(wrapper.find('.tier-toggle').text()).toContain('1 条')
     await wrapper.find('input[type="checkbox"]').setValue(false)
     expect(rows(wrapper).length).toBe(2)
@@ -43,16 +50,14 @@ describe('SegmentTable confidence tiers', () => {
   })
 
   it('keeps original numbering stable when filtering', async () => {
-    const wrapper = mount(SegmentTable, { props: { segments } })
+    const wrapper = mountTable({ segments })
     await wrapper.find('input[type="checkbox"]').setValue(false)
     const indices = rows(wrapper).map((r) => r.find('.index').text())
     expect(indices).toEqual(['1', '3'])
   })
 
   it('renders no toolbar when every record is confirmed', () => {
-    const wrapper = mount(SegmentTable, {
-      props: { segments: [seg({ max_confidence: 0.8 })] },
-    })
+    const wrapper = mountTable({ segments: [seg({ max_confidence: 0.8 })] })
     expect(wrapper.find('.tier-toggle').exists()).toBe(false)
   })
 })

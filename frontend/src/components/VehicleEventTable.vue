@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue'
 import type { VehicleEvent } from '../api/client'
 import { confidenceTier } from '../utils/confidenceTier'
+import ReviewButtons from './ReviewButtons.vue'
 
-const props = defineProps<{ events: VehicleEvent[] }>()
+const props = defineProps<{ events: VehicleEvent[]; jobId: string }>()
 
 const showSuspected = ref(true)
 
@@ -60,6 +61,7 @@ function thumb(url: string | null | undefined): string | null {
           <th>时长</th>
           <th>车牌号</th>
           <th>车牌类型</th>
+          <th>复核</th>
           <th>驶入截图</th>
           <th>驶出截图</th>
           <th>车牌截图</th>
@@ -101,6 +103,9 @@ function thumb(url: string | null | undefined): string | null {
             <span v-else class="plate-empty" title="未能识别车牌号，请查看车牌截图">—</span>
           </td>
           <td class="plate-type">{{ plateTypeLabel(ev.plate_type) || '—' }}</td>
+          <td>
+            <ReviewButtons :job-id="jobId" target-type="vehicle_event" :target-id="ev.id" />
+          </td>
           <td>
             <a
               v-if="thumb(ev.enter_capture?.crop_url)"

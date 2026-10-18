@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import VehicleEventTable from './VehicleEventTable.vue'
 import type { VehicleEvent } from '../api/client'
 
@@ -24,24 +25,28 @@ function event(overrides: Partial<VehicleEvent>): VehicleEvent {
   }
 }
 
+const mountTable = (props: { events: VehicleEvent[] }) =>
+  mount(VehicleEventTable, {
+    props: { jobId: 'job-1', ...props },
+    global: { plugins: [createPinia()] },
+  })
+
 describe('VehicleEventTable', () => {
   it('renders nothing but the empty state when no events', () => {
-    const wrapper = mount(VehicleEventTable, { props: { events: [] } })
+    const wrapper = mountTable({ events: [] })
     expect(wrapper.find('table').exists()).toBe(false)
     expect(wrapper.find('.empty').text()).toContain('未识别到车辆')
   })
 
   it('shows enter/exit times, plate number and type', () => {
-    const wrapper = mount(VehicleEventTable, {
-      props: {
-        events: [
-          event({
-            plate_number: '京A12345',
-            plate_confidence: 0.97,
-            plate_type: 'blue',
-          }),
-        ],
-      },
+    const wrapper = mountTable({
+      events: [
+        event({
+          plate_number: '京A12345',
+          plate_confidence: 0.97,
+          plate_type: 'blue',
+        }),
+      ],
     })
     const row = wrapper.find('tbody tr')
     expect(row.find('.plate-number').text()).toBe('京A12345')
@@ -51,8 +56,8 @@ describe('VehicleEventTable', () => {
   })
 
   it('shows an em-dash with a tooltip when plate recognition failed', () => {
-    const wrapper = mount(VehicleEventTable, {
-      props: { events: [event({ plate_number: null, plate_type: 'black_hk_macao' })] },
+    const wrapper = mountTable({
+      events: [event({ plate_number: null, plate_type: 'black_hk_macao' })],
     })
     const plateCell = wrapper.find('.plate-empty')
     expect(plateCell.text()).toBe('—')
@@ -62,22 +67,18 @@ describe('VehicleEventTable', () => {
 
   it('shows a thumbnail link per capture slot when present', () => {
     const cap = { id: 1, segment_index: 1, timestamp: 10, timestamp_formatted: '', confidence: 0.9, crop_url: '/api/captures/1/image?type=crop', annotated_url: null, kind: 'appearance' }
-    const wrapper = mount(VehicleEventTable, {
-      props: {
-        events: [event({ enter_capture: cap, exit_capture: cap, plate_capture: cap })],
-      },
+    const wrapper = mountTable({
+      events: [event({ enter_capture: cap, exit_capture: cap, plate_capture: cap })],
     })
     expect(wrapper.findAll('.thumb').length).toBe(3)
   })
 
   it('tags rows 确认/疑似 and can hide suspected ones', async () => {
-    const wrapper = mount(VehicleEventTable, {
-      props: {
-        events: [
-          event({ id: 1, max_confidence: 0.9, plate_type: 'blue' }),
-          event({ id: 2, max_confidence: 0.35, plate_type: 'blue' }),
-        ],
-      },
+    const wrapper = mountTable({
+      events: [
+        event({ id: 1, max_confidence: 0.9, plate_type: 'blue' }),
+        event({ id: 2, max_confidence: 0.35, plate_type: 'blue' }),
+      ],
     })
     const badges = wrapper.findAll('.tier-badge').map((b) => b.text())
     expect(badges).toEqual(['确认', '疑似'])

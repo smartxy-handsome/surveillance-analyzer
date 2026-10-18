@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue'
 import type { Segment } from '../api/client'
 import { confidenceTier } from '../utils/confidenceTier'
+import ReviewButtons from './ReviewButtons.vue'
 
-const props = defineProps<{ segments: Segment[] }>()
+const props = defineProps<{ segments: Segment[]; jobId: string }>()
 
 const showSuspected = ref(true)
 
@@ -45,6 +46,7 @@ function getConfidenceColor(conf: number): string {
           <th>检测次数</th>
           <th>平均置信度</th>
           <th>最高置信度</th>
+          <th>复核</th>
         </tr>
       </thead>
       <tbody>
@@ -85,6 +87,9 @@ function getConfidenceColor(conf: number): string {
             >
               {{ (seg.max_confidence * 100).toFixed(0) }}%
             </span>
+          </td>
+          <td>
+            <ReviewButtons :job-id="jobId" target-type="segment" :target-id="seg.id" />
           </td>
         </tr>
       </tbody>

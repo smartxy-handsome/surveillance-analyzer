@@ -2,9 +2,11 @@
 import { computed, ref } from 'vue'
 import type { Capture } from '../api/client'
 import { captureRole, captureRoleLabel, type CaptureRole } from '../utils/captureRoles'
+import ReviewButtons from './ReviewButtons.vue'
 
 const props = defineProps<{
   captures: Capture[]
+  jobId: string
 }>()
 
 const selectedImage = ref<Capture | null>(null)
@@ -150,6 +152,15 @@ function onWheel(e: WheelEvent) {
             <span class="timestamp">{{ capture.timestamp_formatted }}</span>
             <span class="confidence">{{ (capture.confidence * 100).toFixed(0) }}%</span>
           </div>
+          <div class="capture-review" @click.stop>
+            <ReviewButtons
+              :job-id="jobId"
+              target-type="capture"
+              :target-id="capture.id"
+              good-label="✓ 是人体"
+              bad-label="✗ 非人体"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -201,6 +212,13 @@ function onWheel(e: WheelEvent) {
         <div class="lightbox-info">
           <span>时间: {{ selectedImage.timestamp_formatted }}</span>
           <span>置信度: {{ (selectedImage.confidence * 100).toFixed(1) }}%</span>
+          <ReviewButtons
+            :job-id="jobId"
+            target-type="capture"
+            :target-id="selectedImage.id"
+            good-label="✓ 是人体"
+            bad-label="✗ 非人体"
+          />
           <span v-if="roleOf(selectedImage, groupedCaptures[selectedImage.segment_index])" class="lightbox-role">
             {{ captureRoleLabel(roleOf(selectedImage, groupedCaptures[selectedImage.segment_index])) }}
           </span>
@@ -337,6 +355,11 @@ function onWheel(e: WheelEvent) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.capture-review {
+  padding: 0 var(--space-3) var(--space-2);
+  display: flex;
 }
 
 .timestamp {
