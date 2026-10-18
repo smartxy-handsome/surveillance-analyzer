@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    # windows-latest matches the development machine (D3D11 decode paths,
+    # GBK-locale pitfalls are exercised where they occur). Windows runners
+    # bill at 2x, well within the free tier for a private repo.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Sync backend deps
+        run: uv sync --extra dev
+
+      - name: Ruff (backend lint)
+        run: uv run ruff check src/ tests/
+
+      - name: Pytest (backend tests)
+        run: uv run pytest tests/ -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Vitest (frontend tests)
+        run: |
+          npm ci
+          npm test
+        working-directory: frontend
+
+      # vue-tsc runs first inside the build script, covering the typecheck
+      - name: Vite build (frontend)
+        run: npm run build
+        working-directory: frontend
