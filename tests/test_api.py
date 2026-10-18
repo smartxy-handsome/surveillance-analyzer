@@ -11,6 +11,8 @@ from src.storage.database import Base
 from src.storage.repository import (
     CaptureRepository,
     JobRepository,
+    MissedEventRepository,
+    ReviewMarkRepository,
     SegmentRepository,
     VehicleEventRepository,
 )
@@ -36,6 +38,8 @@ async def client():
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
     app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
+    app.state.review_repo = ReviewMarkRepository(session_factory)
+    app.state.missed_event_repo = MissedEventRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
     app.state.job_progress = {}
@@ -314,6 +318,8 @@ async def _auth_app(auth_enabled: bool, api_key: str = ""):
     app.state.segment_repo = SegmentRepository(session_factory)
     app.state.capture_repo = CaptureRepository(session_factory)
     app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
+    app.state.review_repo = ReviewMarkRepository(session_factory)
+    app.state.missed_event_repo = MissedEventRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(1)
     app.state.job_progress = {}
@@ -343,6 +349,93 @@ async def test_api_key_auth_disabled_by_default():
     app = await _auth_app(auth_enabled=False)
     with TestClient(app) as tc:
         assert tc.get("/api/jobs").status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_review_mark_upsert_list_delete(client):
+    """Review verdicts upsert per target, list per job, delete cleanly."""
+    from src.storage.repository import JobCreate
+
+    app = client.test_app
+    job_id = "review-job-1"
+    await app.state.job_repo.create(
+        JobCreate(
+            id=job_id,
+            filename="v.mp4",
+            file_path="D:/v.mp4",
+            sampling_fps=3.0,
+            model_name="yolov8m.pt",
+            confidence_threshold=0.6,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+
+    assert (await client.get(f"/api/jobs/{job_id}/reviews")).json() == []
+
+    resp = await client.put(
+        f"/api/jobs/{job_id}/reviews",
+        json={"target_type": "capture", "target_id": 7, "verdict": "bad"},
+    )
+    assert resp.status_code == 200
+
+    # Re-reviewing the same target replaces the verdict.
+    await client.put(
+        f"/api/jobs/{job_id}/reviews",
+        json={"target_type": "capture", "target_id": 7, "verdict": "good"},
+    )
+    marks = (await client.get(f"/api/jobs/{job_id}/reviews")).json()
+    assert marks == [{"target_type": "capture", "target_id": 7, "verdict": "good"}]
+
+    resp = await client.put(
+        f"/api/jobs/{job_id}/reviews",
+        json={"target_type": "nonsense", "target_id": 1, "verdict": "good"},
+    )
+    assert resp.status_code == 422
+
+    assert (await client.delete(f"/api/jobs/{job_id}/reviews/capture/7")).status_code == 200
+    assert (await client.delete(f"/api/jobs/{job_id}/reviews/capture/7")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_missed_events_crud(client):
+    """Missed events: add with validation, list ordered, delete."""
+    from src.storage.repository import JobCreate
+
+    app = client.test_app
+    job_id = "missed-job-1"
+    await app.state.job_repo.create(
+        JobCreate(
+            id=job_id,
+            filename="v.mp4",
+            file_path="D:/v.mp4",
+            sampling_fps=3.0,
+            model_name="yolov8m.pt",
+            confidence_threshold=0.6,
+            merge_gap_seconds=2.0,
+            min_segment_seconds=1.0,
+        )
+    )
+
+    resp = await client.post(
+        f"/api/jobs/{job_id}/missed-events",
+        json={"start_seconds": 60, "end_seconds": 75, "note": "有人从左侧进入"},
+    )
+    assert resp.status_code == 200
+    event_id = resp.json()["id"]
+
+    resp = await client.post(
+        f"/api/jobs/{job_id}/missed-events",
+        json={"start_seconds": 75, "end_seconds": 60},
+    )
+    assert resp.status_code == 400
+
+    events = (await client.get(f"/api/jobs/{job_id}/missed-events")).json()
+    assert len(events) == 1
+    assert events[0]["note"] == "有人从左侧进入"
+
+    assert (await client.delete(f"/api/jobs/{job_id}/missed-events/{event_id}")).status_code == 200
+    assert (await client.get(f"/api/jobs/{job_id}/missed-events")).json() == []
 
 
 def test_create_app_rejects_blank_key_when_auth_enabled():

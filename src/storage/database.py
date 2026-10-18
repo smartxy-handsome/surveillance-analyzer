@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -86,6 +86,41 @@ class VehicleEventModel(Base):
     plate_number = Column(String, nullable=True)
     plate_confidence = Column(Float, nullable=True)
     plate_type = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class ReviewMarkModel(Base):
+    """Human verdict on one analysis output (capture, segment or vehicle event).
+
+    verdict is 'good' (real person / real event) or 'bad' (false positive).
+    Re-reviewing the same target replaces the verdict (unique constraint).
+    """
+
+    __tablename__ = "review_marks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=False)  # capture | segment | vehicle_event
+    target_id = Column(Integer, nullable=False)
+    verdict = Column(String, nullable=False)  # good | bad
+    created_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("target_type", "target_id", name="uq_review_target"),
+    )
+
+
+class MissedEventModel(Base):
+    """A real person appearance the user spotted while watching the video
+    that the system failed to record -- the ground truth for recall."""
+
+    __tablename__ = "missed_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String, nullable=False, index=True)
+    start_seconds = Column(Float, nullable=False)
+    end_seconds = Column(Float, nullable=False)
+    note = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
 

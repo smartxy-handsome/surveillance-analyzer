@@ -14,6 +14,8 @@ from src.storage.database import init_db
 from src.storage.repository import (
     CaptureRepository,
     JobRepository,
+    MissedEventRepository,
+    ReviewMarkRepository,
     SegmentRepository,
     VehicleEventRepository,
 )
@@ -64,6 +66,8 @@ async def lifespan(app: FastAPI):
     app.state.segment_repo = segment_repo
     app.state.capture_repo = capture_repo
     app.state.vehicle_event_repo = vehicle_event_repo
+    app.state.review_repo = ReviewMarkRepository(session_factory)
+    app.state.missed_event_repo = MissedEventRepository(session_factory)
     app.state.session_factory = session_factory
     app.state.analysis_semaphore = asyncio.Semaphore(config.pipeline.max_concurrent_jobs)
     # Ephemeral per-job analysis progress (job_id -> {processed, total, percent});

@@ -3,7 +3,14 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from src.core.timeutil import utcnow
-from src.storage.database import CaptureModel, JobModel, SegmentModel, VehicleEventModel
+from src.storage.database import (
+    CaptureModel,
+    JobModel,
+    MissedEventModel,
+    ReviewMarkModel,
+    SegmentModel,
+    VehicleEventModel,
+)
 
 
 @dataclass
@@ -264,6 +271,114 @@ class VehicleEventRepository:
     async def delete_by_job(self, job_id: str):
         async with self._session_factory() as session:
             stmt = select(VehicleEventModel).where(VehicleEventModel.job_id == job_id)
+            result = await session.execute(stmt)
+            for ev in result.scalars().all():
+                await session.delete(ev)
+            await session.commit()
+
+
+class ReviewMarkRepository:
+    """Human verdicts on captures / segments / vehicle events ('good' =
+    real person or real event, 'bad' = false positive). One row per target:
+    re-reviewing replaces the verdict."""
+
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+
+    async def upsert(
+        self, job_id: str, target_type: str, target_id: int, verdict: str
+    ) -> ReviewMarkModel:
+        async with self._session_factory() as session:
+            stmt = select(ReviewMarkModel).where(
+                ReviewMarkModel.target_type == target_type,
+                ReviewMarkModel.target_id == target_id,
+            )
+            result = await session.execute(stmt)
+            mark = result.scalars().first()
+            if mark is None:
+                mark = ReviewMarkModel(
+                    job_id=job_id, target_type=target_type, target_id=target_id
+                )
+                session.add(mark)
+            mark.verdict = verdict
+            mark.created_at = utcnow()
+            await session.commit()
+            await session.refresh(mark)
+            return mark
+
+    async def delete(self, target_type: str, target_id: int) -> bool:
+        async with self._session_factory() as session:
+            stmt = select(ReviewMarkModel).where(
+                ReviewMarkModel.target_type == target_type,
+                ReviewMarkModel.target_id == target_id,
+            )
+            result = await session.execute(stmt)
+            mark = result.scalars().first()
+            if mark is None:
+                return False
+            await session.delete(mark)
+            await session.commit()
+            return True
+
+    async def list_by_job(self, job_id: str) -> list[ReviewMarkModel]:
+        async with self._session_factory() as session:
+            stmt = select(ReviewMarkModel).where(ReviewMarkModel.job_id == job_id)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def delete_by_job(self, job_id: str) -> None:
+        async with self._session_factory() as session:
+            stmt = select(ReviewMarkModel).where(ReviewMarkModel.job_id == job_id)
+            result = await session.execute(stmt)
+            for mark in result.scalars().all():
+                await session.delete(mark)
+            await session.commit()
+
+
+class MissedEventRepository:
+    """Real appearances the user spotted in the video that the system
+    never recorded -- the recall ground truth."""
+
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+
+    async def add(
+        self, job_id: str, start_seconds: float, end_seconds: float, note: str | None
+    ) -> MissedEventModel:
+        async with self._session_factory() as session:
+            model = MissedEventModel(
+                job_id=job_id,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+                note=note,
+            )
+            session.add(model)
+            await session.commit()
+            await session.refresh(model)
+            return model
+
+    async def delete(self, event_id: int) -> bool:
+        async with self._session_factory() as session:
+            model = await session.get(MissedEventModel, event_id)
+            if model is None:
+                return False
+            await session.delete(model)
+            await session.commit()
+            return True
+
+    async def list_by_job(self, job_id: str) -> list[MissedEventModel]:
+        async with self._session_factory() as session:
+            stmt = (
+                select(MissedEventModel)
+                .where(MissedEventModel.job_id == job_id)
+                .order_by(MissedEventModel.start_seconds)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def delete_by_job(self, job_id: str) -> None:
+        async with self._session_factory() as session:
+            stmt = select(MissedEventModel).where(MissedEventModel.job_id == job_id)
             result = await session.execute(stmt)
             for ev in result.scalars().all():
                 await session.delete(ev)

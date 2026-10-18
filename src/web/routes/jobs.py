@@ -173,6 +173,8 @@ def create_jobs_router() -> APIRouter:
         await capture_repo.delete_by_job(job_id)
         await segment_repo.delete_by_job(job_id)
         await request.app.state.vehicle_event_repo.delete_by_job(job_id)
+        await request.app.state.review_repo.delete_by_job(job_id)
+        await request.app.state.missed_event_repo.delete_by_job(job_id)
         await job_repo.delete(job_id)
         _remove_capture_dir(job_id)
 

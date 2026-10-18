@@ -2,7 +2,15 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from src.utils.time_format import seconds_to_hms
-from src.web.schemas import CaptureResponse, SegmentResponse, VehicleEventResponse
+from src.web.schemas import (
+    CaptureResponse,
+    MissedEventRequest,
+    MissedEventResponse,
+    ReviewMarkRequest,
+    ReviewMarkResponse,
+    SegmentResponse,
+    VehicleEventResponse,
+)
 
 
 def create_results_router() -> APIRouter:
@@ -141,5 +149,87 @@ def create_results_router() -> APIRouter:
             raise HTTPException(404, "Image file not found")
 
         return FileResponse(file_path, media_type="image/jpeg")
+
+    @router.get("/jobs/{job_id}/reviews", response_model=list[ReviewMarkResponse])
+    async def get_reviews(request: Request, job_id: str):
+        """Human review verdicts for this job's captures/segments/events."""
+        job_repo = request.app.state.job_repo
+        review_repo = request.app.state.review_repo
+
+        job = await job_repo.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+
+        marks = await review_repo.list_by_job(job_id)
+        return [
+            ReviewMarkResponse(target_type=m.target_type, target_id=m.target_id, verdict=m.verdict)
+            for m in marks
+        ]
+
+    @router.put("/jobs/{job_id}/reviews", response_model=ReviewMarkResponse)
+    async def put_review(request: Request, job_id: str, body: ReviewMarkRequest):
+        """Record (or replace) one review verdict."""
+        job_repo = request.app.state.job_repo
+        review_repo = request.app.state.review_repo
+
+        job = await job_repo.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+
+        mark = await review_repo.upsert(job_id, body.target_type, body.target_id, body.verdict)
+        return ReviewMarkResponse(
+            target_type=mark.target_type, target_id=mark.target_id, verdict=mark.verdict
+        )
+
+    @router.delete("/jobs/{job_id}/reviews/{target_type}/{target_id}")
+    async def delete_review(request: Request, job_id: str, target_type: str, target_id: int):
+        review_repo = request.app.state.review_repo
+        deleted = await review_repo.delete(target_type, target_id)
+        if not deleted:
+            raise HTTPException(404, "Review mark not found")
+        return {"ok": True}
+
+    @router.get("/jobs/{job_id}/missed-events", response_model=list[MissedEventResponse])
+    async def get_missed_events(request: Request, job_id: str):
+        """Real appearances the user spotted that the system never recorded
+        (the recall ground truth)."""
+        job_repo = request.app.state.job_repo
+        missed_repo = request.app.state.missed_event_repo
+
+        job = await job_repo.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+
+        events = await missed_repo.list_by_job(job_id)
+        return [
+            MissedEventResponse(
+                id=e.id, start_seconds=e.start_seconds, end_seconds=e.end_seconds, note=e.note
+            )
+            for e in events
+        ]
+
+    @router.post("/jobs/{job_id}/missed-events", response_model=MissedEventResponse)
+    async def add_missed_event(request: Request, job_id: str, body: MissedEventRequest):
+        job_repo = request.app.state.job_repo
+        missed_repo = request.app.state.missed_event_repo
+
+        job = await job_repo.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        if body.end_seconds <= body.start_seconds:
+            raise HTTPException(400, "end_seconds must be greater than start_seconds")
+
+        ev = await missed_repo.add(job_id, body.start_seconds, body.end_seconds, body.note)
+        return MissedEventResponse(
+            id=ev.id, start_seconds=ev.start_seconds, end_seconds=ev.end_seconds, note=ev.note
+        )
+
+    @router.delete("/jobs/{job_id}/missed-events/{event_id}")
+    async def delete_missed_event(request: Request, job_id: str, event_id: int):
+        missed_repo = request.app.state.missed_event_repo
+        deleted = await missed_repo.delete(event_id)
+        if not deleted:
+            raise HTTPException(404, "Missed event not found")
+        return {"ok": True}
 
     return router

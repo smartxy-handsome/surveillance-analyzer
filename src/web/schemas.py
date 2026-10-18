@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 
 from src.core.models import DETECTION_TARGET_CLASSES
 
@@ -93,3 +94,28 @@ class VehicleEventResponse(BaseModel):
     enter_capture: CaptureResponse | None = None
     exit_capture: CaptureResponse | None = None
     plate_capture: CaptureResponse | None = None
+
+
+class ReviewMarkRequest(BaseModel):
+    target_type: Literal["capture", "segment", "vehicle_event"]
+    target_id: int
+    verdict: Literal["good", "bad"]
+
+
+class ReviewMarkResponse(BaseModel):
+    target_type: str
+    target_id: int
+    verdict: str
+
+
+class MissedEventRequest(BaseModel):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+    note: str | None = None
+
+
+class MissedEventResponse(BaseModel):
+    id: int
+    start_seconds: float
+    end_seconds: float
+    note: str | None = None
