@@ -292,6 +292,69 @@ def test_create_app_uses_config_cors_origins():
     assert middleware.kwargs["allow_origins"] == ["http://example.test:5173"]
 
 
+async def _auth_app(auth_enabled: bool, api_key: str = ""):
+    """App with API-key guard settings and in-memory repos wired."""
+    from src.core.models import AppConfig, WebConfig
+    from src.web.app import create_app
+
+    config = AppConfig(
+        web=WebConfig(auth_enabled=auth_enabled, auth_api_key=api_key)
+    )
+
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app = create_app(config=config, lifespan_fn=noop_lifespan)
+    engine = create_async_engine("sqlite+aiosqlite://")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    app.state.job_repo = JobRepository(session_factory)
+    app.state.segment_repo = SegmentRepository(session_factory)
+    app.state.capture_repo = CaptureRepository(session_factory)
+    app.state.vehicle_event_repo = VehicleEventRepository(session_factory)
+    app.state.session_factory = session_factory
+    app.state.analysis_semaphore = asyncio.Semaphore(1)
+    app.state.job_progress = {}
+    return app
+
+
+@pytest.mark.asyncio
+async def test_api_key_auth_gates_api_but_not_health():
+    """Enabled guard: /api needs X-API-Key, /health stays open."""
+    from fastapi.testclient import TestClient
+
+    app = await _auth_app(auth_enabled=True, api_key="secret-key")
+    with TestClient(app) as tc:
+        assert tc.get("/api/jobs").status_code == 401
+        wrong = tc.get("/api/jobs", headers={"X-API-Key": "wrong"})
+        assert wrong.status_code == 401
+        ok = tc.get("/api/jobs", headers={"X-API-Key": "secret-key"})
+        assert ok.status_code == 200
+        assert tc.get("/health").status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_api_key_auth_disabled_by_default():
+    """Default config has no guard: /api answers without any header."""
+    from fastapi.testclient import TestClient
+
+    app = await _auth_app(auth_enabled=False)
+    with TestClient(app) as tc:
+        assert tc.get("/api/jobs").status_code == 200
+
+
+def test_create_app_rejects_blank_key_when_auth_enabled():
+    """Enabling the guard without a key would lock out everyone; fail loudly."""
+    from src.core.models import AppConfig, WebConfig
+    from src.web.app import create_app
+
+    config = AppConfig(web=WebConfig(auth_enabled=True, auth_api_key=""))
+    with pytest.raises(ValueError, match="auth_api_key"):
+        create_app(config=config)
+
+
 @pytest.mark.asyncio
 async def test_run_analysis_skips_deleted_queued_job(client, tmp_path, monkeypatch):
     """A job deleted while queued is skipped, not crashed, when its turn comes.

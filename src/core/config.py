@@ -80,6 +80,12 @@ def load_config(yaml_path: str | Path) -> AppConfig:
             "parallel decoding breaks chronological aggregation"
         )
 
+    web = WebConfig(**web_raw) if web_raw else WebConfig()
+    # An enabled guard with a blank key would reject every request including
+    # the operator's; catch the misconfiguration at startup instead.
+    if web.auth_enabled and not web.auth_api_key:
+        raise ValueError("web.auth_enabled requires a non-empty web.auth_api_key")
+
     return AppConfig(
         video=VideoConfig(**video_raw) if video_raw else VideoConfig(),
         sampling=sampling,
@@ -89,5 +95,5 @@ def load_config(yaml_path: str | Path) -> AppConfig:
         ),
         pipeline=pipeline,
         storage=StorageConfig(**storage_raw) if storage_raw else StorageConfig(),
-        web=WebConfig(**web_raw) if web_raw else WebConfig(),
+        web=web,
     )

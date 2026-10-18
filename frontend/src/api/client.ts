@@ -4,6 +4,40 @@ const api = axios.create({
   baseURL: '/api',
 })
 
+// Optional API-key guard (server config web.auth_enabled). The key is
+// remembered in localStorage; on a 401 the SPA asks once and retries.
+const API_KEY_STORAGE = 'surveillance-api-key'
+
+export function getStoredApiKey(): string {
+  return localStorage.getItem(API_KEY_STORAGE) ?? ''
+}
+
+export function setStoredApiKey(key: string): void {
+  localStorage.setItem(API_KEY_STORAGE, key)
+}
+
+api.interceptors.request.use((config) => {
+  const key = getStoredApiKey()
+  if (key) {
+    config.headers['X-API-Key'] = key
+  }
+  return config
+})
+
+api.interceptors.response.use(undefined, (error) => {
+  const config = error?.config
+  if (error?.response?.status === 401 && config && !config._retriedAuth) {
+    const key = window.prompt('服务器已开启 API Key 验证，请输入密钥：')
+    if (key) {
+      setStoredApiKey(key.trim())
+      config._retriedAuth = true
+      config.headers['X-API-Key'] = key.trim()
+      return api.request(config)
+    }
+  }
+  return Promise.reject(error)
+})
+
 export interface Job {
   id: string
   filename: string

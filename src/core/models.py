@@ -111,12 +111,17 @@ class StorageConfig:
 
 @dataclass
 class WebConfig:
-    # Listen on loopback by default: the API has no authentication and /browse
-    # can list any directory, so binding 0.0.0.0 would expose the whole disk
-    # to the LAN. Change explicitly to share on a network.
+    # Listen on loopback by default: /browse can list any directory. Binding
+    # 0.0.0.0 to share on a network should be paired with auth below.
     host: str = "127.0.0.1"
     port: int = 8000
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173"])
+    # Optional API-key guard for LAN/remote deployments. Off by default so
+    # local use stays friction-free; when enabled every /api request must
+    # carry an X-API-Key header (the SPA prompts once and remembers it).
+    # /health and static assets stay open.
+    auth_enabled: bool = False
+    auth_api_key: str = ""
 
 
 @dataclass

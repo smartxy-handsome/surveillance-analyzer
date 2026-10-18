@@ -1,11 +1,12 @@
 import asyncio
+import hmac
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 
 from src.core.config import load_config
 from src.core.models import AppConfig, WebConfig
@@ -18,6 +19,31 @@ from src.storage.repository import (
 )
 from src.web.routes.jobs import create_jobs_router
 from src.web.routes.results import create_results_router
+
+
+class APIKeyMiddleware:
+    """Reject /api requests lacking the configured X-API-Key.
+
+    Pure ASGI middleware (not BaseHTTPMiddleware) so it cannot interfere
+    with background tasks. /health and static assets stay open: the key
+    only gates data and job-control endpoints.
+    """
+
+    def __init__(self, app, api_key: str):
+        self.app = app
+        self._api_key = api_key.encode()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/api"):
+            headers = dict(scope.get("headers", []))
+            supplied = headers.get(b"x-api-key", b"")
+            if not hmac.compare_digest(supplied, self._api_key):
+                response = JSONResponse(
+                    {"detail": "Invalid or missing API key"}, status_code=401
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 @asynccontextmanager
@@ -72,6 +98,13 @@ def create_app(lifespan_fn=None, config: AppConfig | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if config is not None and config.web.auth_enabled:
+        # load_config already rejects an enabled guard with a blank key;
+        # this also covers AppConfig built directly in tests.
+        if not config.web.auth_api_key:
+            raise ValueError("web.auth_enabled requires a non-empty web.auth_api_key")
+        app.add_middleware(APIKeyMiddleware, api_key=config.web.auth_api_key)
 
     if config is not None:
         app.state.config = config

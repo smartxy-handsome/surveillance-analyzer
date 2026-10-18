@@ -66,6 +66,21 @@ def test_reject_parallel_decode_threads(tmp_path):
         load_config(p)
 
 
+def test_reject_enabled_auth_with_blank_key(tmp_path):
+    """An enabled API-key guard with a blank key would reject every request."""
+    cfg = {"web": {"auth_enabled": True, "auth_api_key": ""}}
+    p = tmp_path / "custom.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="auth_api_key"):
+        load_config(p)
+
+
+def test_auth_defaults_off():
+    """Local use stays friction-free: the API-key guard ships disabled."""
+    config = load_config(Path("config/default.yaml"))
+    assert config.web.auth_enabled is False
+
+
 def test_detection_defaults_tuned_for_surveillance():
     """yolov8m@1280: 2.5x more confirmed records vs yolov8s@1280 on night footage."""
     config = load_config(Path("config/default.yaml"))

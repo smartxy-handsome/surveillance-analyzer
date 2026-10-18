@@ -66,8 +66,13 @@ storage:
   video_storage_dir: "./data/videos"
 
 web:
-  # Loopback by default: the API is unauthenticated and /browse exposes the
-  # filesystem. Set 0.0.0.0 explicitly to share on a network.
+  # Loopback by default: /browse can list any directory. Set 0.0.0.0
+  # explicitly to share on a network -- and turn on auth below first.
   host: "127.0.0.1"
   port: 8000
   cors_origins: ["http://localhost:5173"]
+  # Optional API-key guard for LAN/remote deployments. When enabled, every
+  # /api request must carry an X-API-Key header; the SPA prompts once and
+  # remembers the key in localStorage. /health and static assets stay open.
+  auth_enabled: false
+  auth_api_key: ""
