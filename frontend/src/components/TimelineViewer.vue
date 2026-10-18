@@ -1,16 +1,42 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Segment } from '../api/client'
+import type { Segment, VehicleEvent } from '../api/client'
 
-const props = defineProps<{ segments: Segment[]; totalDuration: number }>()
+const props = defineProps<{
+  segments?: Segment[]
+  events?: VehicleEvent[]
+  totalDuration: number
+}>()
 
-const bars = computed(() => {
+interface Bar {
+  left: string
+  width: string
+  label: string
+  plate: string | null
+  confidence: number
+  kind: 'person' | 'vehicle'
+}
+
+const bars = computed<Bar[]>(() => {
   if (!props.totalDuration) return []
-  return props.segments.map((s, i) => ({
-    left: `${(s.start_time / props.totalDuration) * 100}%`,
-    width: `${(s.duration_seconds / props.totalDuration) * 100}%`,
+  const pct = (seconds: number) => `${(seconds / props.totalDuration) * 100}%`
+  if (props.events) {
+    return props.events.map((e, i) => ({
+      left: pct(e.enter_time),
+      width: pct(e.exit_time - e.enter_time),
+      label: `车辆 ${i + 1}: ${e.enter_time_formatted} - ${e.exit_time_formatted}`,
+      plate: e.plate_number,
+      confidence: e.max_confidence,
+      kind: 'vehicle',
+    }))
+  }
+  return (props.segments ?? []).map((s, i) => ({
+    left: pct(s.start_time),
+    width: pct(s.duration_seconds),
     label: `时间段 ${i + 1}: ${s.start_time_formatted} - ${s.end_time_formatted}`,
+    plate: null,
     confidence: s.avg_confidence,
+    kind: 'person',
   }))
 })
 
@@ -28,12 +54,14 @@ function formatTime(seconds: number): string {
         v-for="(bar, i) in bars"
         :key="i"
         class="segment-bar"
+        :class="bar.kind"
         :style="{ left: bar.left, width: bar.width }"
         :title="bar.label"
       >
         <div class="bar-fill"></div>
         <div class="bar-tooltip">
           <span class="tooltip-label">{{ bar.label }}</span>
+          <span v-if="bar.plate" class="tooltip-plate">车牌: {{ bar.plate }}</span>
           <span class="tooltip-confidence">置信度: {{ (bar.confidence * 100).toFixed(0) }}%</span>
         </div>
       </div>
@@ -83,6 +111,13 @@ function formatTime(seconds: number): string {
   transform: scaleY(1.1);
 }
 
+/* Vehicle bars reuse this component on the vehicle view; a distinct hue
+   keeps them readable at a glance next to the blue person bars. */
+.segment-bar.vehicle .bar-fill {
+  background: var(--gradient-green);
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
+}
+
 .bar-tooltip {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -117,6 +152,14 @@ function formatTime(seconds: number): string {
   font-size: var(--text-xs);
   color: var(--accent-blue);
   margin-top: 2px;
+}
+
+.tooltip-plate {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--accent-green, #3fb950);
+  margin-top: 2px;
+  font-family: var(--font-mono);
 }
 
 .labels {

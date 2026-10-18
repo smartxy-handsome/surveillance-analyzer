@@ -224,6 +224,11 @@ function getStatusText(status: string): string {
     </div>
 
     <div v-if="!showPersonView" class="vehicle-section">
+      <TimelineViewer
+        v-if="filteredEvents.length > 0 && store.currentJob.video_metadata?.duration"
+        :events="filteredEvents"
+        :total-duration="store.currentJob.video_metadata.duration"
+      />
       <CollapsibleSection storage-key="vehicle-events" title="车辆事件">
         <template #header>
           <span class="icon">🚗</span>
